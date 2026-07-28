@@ -65,10 +65,10 @@ struct MonitorView: View {
                         if store.monitoring.sessions.isEmpty {
                             EmptyStateView(icon: .monitor, title: "目前沒有執行中的會話")
                         }
-                        ForEach(store.monitoring.sessions) { session in
-                            SessionCard(session: session,
+                        ForEach(store.monitoring.sessions) { agentSession in
+                            SessionCard(session: agentSession,
                                         threshold: handoverThreshold,
-                                        isOutsource: isOutsource(session))
+                                        isOutsource: isOutsource(agentSession))
                         }
                     }
                 }
@@ -86,8 +86,10 @@ struct MonitorView: View {
         session.isDemo ? DemoData.handoverThreshold : 0.75
     }
 
-    private func isOutsource(_ session: MonitorSession) -> Bool {
-        store.outsourceWorkers.contains { $0.id == session.id || $0.codename == session.name }
+    private func isOutsource(_ agentSession: MonitorSession) -> Bool {
+        store.outsourceWorkers.contains {
+            $0.id == agentSession.id || $0.codename == agentSession.name
+        }
     }
 }
 

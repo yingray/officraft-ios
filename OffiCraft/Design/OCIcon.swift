@@ -8,9 +8,6 @@ enum SVGPrimitive {
     case circle(cx: CGFloat, cy: CGFloat, r: CGFloat)
     case polyline([CGPoint])
 
-    /// Overrides for the handful of glyphs that mix filled and stroked parts
-    /// (the brand mark, the battery, the signal bars).
-    var forcedFill: Color? { nil }
 }
 
 /// How an icon's geometry is painted.
