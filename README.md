@@ -120,5 +120,5 @@ gate step. No server needed. Useful for review and for screenshots.
   `cpu_pct` / `ram_pct` only, not the absolute `11.4／16 GB` the mock shows.
 - 角色誌 / 任務手冊 / 參數調整 / 使用說明 are authoring surfaces that stay in the
   web console; the app links out instead of shipping a stub.
-- Attachment upload from the composer is not wired yet — the `+` button is
-  present, the picker is not.
+- Attachments are uploaded inline as base64 (that is what the wire takes), so
+  the composer caps a single file at 12 MB.

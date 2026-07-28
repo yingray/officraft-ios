@@ -19,6 +19,10 @@ struct ChatView: View {
     @State private var previewAuthor = ""
     @State private var previewTimestamp: Date?
     @State private var openCard: CardRoute?
+    @State private var pending: [PendingAttachment] = []
+    @State private var isPickingPhotos = false
+    @State private var isPickingFiles = false
+    @State private var attachmentError: String?
 
     private var messages: [ChatMessage] { store.messages(with: peerId) }
 
@@ -34,6 +38,17 @@ struct ChatView: View {
             AskDetailView(cardId: route.id)
         }
         .attachmentPreview($preview, author: previewAuthor, timestamp: previewTimestamp)
+        .attachmentPicker(attachments: $pending,
+                          isPresentingPhotos: $isPickingPhotos,
+                          isPresentingFiles: $isPickingFiles,
+                          errorMessage: $attachmentError)
+        .alert("附件加不進來",
+               isPresented: Binding(get: { attachmentError != nil },
+                                    set: { if !$0 { attachmentError = nil } })) {
+            Button("好") { attachmentError = nil }
+        } message: {
+            Text(attachmentError ?? "")
+        }
         .task {
             store.activeThreadPeer = peerId
             await store.loadThread(with: peerId)
@@ -69,8 +84,7 @@ struct ChatView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button {
-                    // Attachment picker lives on the composer's + button; this
-                    // is the media shortcut from the design doc.
+                    isPickingPhotos = true
                 } label: {
                     Icon(.image, size: 19)
                         .foregroundStyle(OC.accent)
@@ -178,12 +192,16 @@ struct ChatView: View {
                 accentSend: true,
                 showsMarkdownToggle: true,
                 markdownPreview: $markdownPreview,
-                onAttach: {}
+                attachments: $pending,
+                onPickPhotos: { isPickingPhotos = true },
+                onPickFiles: { isPickingFiles = true }
             ) {
                 let body = draft
+                let files = pending
                 draft = ""
+                pending = []
                 markdownPreview = false
-                Task { await store.send(body, to: peerId) }
+                Task { await store.send(body, to: peerId, attachments: files) }
             }
         }
         .padding(.horizontal, OCMetrics.screenPadding)

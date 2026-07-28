@@ -43,6 +43,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: 用 Face ID 快速解鎖你的工作室控制台。
+        NSPhotoLibraryUsageDescription: 選擇照片附加到訊息或請示回覆。
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true

@@ -53,17 +53,36 @@ extension APIClient {
         try await get("/api/reply-cards/count")
     }
 
+    /// Inline upload shape shared by chat, reply-card answers and cards.
+    struct AttachmentUpload: Encodable {
+        var filename: String?
+        var mime: String?
+        var dataB64: String
+
+        init(filename: String?, mime: String?, data: Data) {
+            self.filename = filename
+            self.mime = mime
+            self.dataB64 = data.base64EncodedString()
+        }
+    }
+
     struct AnswerRequest: Encodable {
         var optionIdx: Int?
         var text: String?
+        var attachments: [AttachmentUpload]?
     }
 
     /// Answer a waiting card. `optionIdx` picks one of the offered options;
     /// `text` is the owner's own wording. Either may be present.
     @discardableResult
-    func answer(cardId: String, optionIdx: Int?, text: String?) async throws -> ReplyCard {
+    func answer(cardId: String,
+                optionIdx: Int?,
+                text: String?,
+                attachments: [AttachmentUpload]? = nil) async throws -> ReplyCard {
         try await post("/api/reply-cards/\(cardId)/answer",
-                       body: AnswerRequest(optionIdx: optionIdx, text: text))
+                       body: AnswerRequest(optionIdx: optionIdx,
+                                           text: text,
+                                           attachments: attachments))
     }
 
     /// Revise an answer that was already given (PUT, not POST).
@@ -155,11 +174,15 @@ extension APIClient {
     struct ChatSendRequest: Encodable {
         let to: String
         let body: String
+        var attachments: [AttachmentUpload]?
     }
 
     @discardableResult
-    func sendChat(to peer: String, body: String) async throws -> ChatMessage {
-        try await post("/api/chat", body: ChatSendRequest(to: peer, body: body))
+    func sendChat(to peer: String,
+                  body: String,
+                  attachments: [AttachmentUpload]? = nil) async throws -> ChatMessage {
+        try await post("/api/chat",
+                       body: ChatSendRequest(to: peer, body: body, attachments: attachments))
     }
 
     struct MarkReadRequest: Encodable { let peer: String }

@@ -31,6 +31,8 @@
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>用 Face ID 快速解鎖你的工作室控制台。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>選擇照片附加到訊息或請示回覆。</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

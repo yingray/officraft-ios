@@ -229,22 +229,40 @@ final class StudioStore {
         }
     }
 
-    func send(_ body: String, to peer: String) async {
+    func send(_ body: String,
+              to peer: String,
+              attachments: [PendingAttachment] = []) async {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
 
         if session.isDemo {
-            let echo = ChatMessage(id: UUID().uuidString, from: session.ownerId,
-                                   to: peer, body: trimmed,
-                                   ts: Date().timeIntervalSince1970)
+            let echo = ChatMessage(
+                id: UUID().uuidString, from: session.ownerId, to: peer,
+                body: trimmed, ts: Date().timeIntervalSince1970,
+                attachments: attachments.map {
+                    Attachment(id: $0.id.uuidString, filename: $0.filename,
+                               mime: $0.mime, isImage: $0.isImage, url: "")
+                }
+            )
             threads[peer, default: []].append(echo)
             return
         }
         do {
-            let sent = try await session.api.sendChat(to: peer, body: trimmed)
+            let sent = try await session.api.sendChat(
+                to: peer,
+                body: trimmed,
+                attachments: uploads(from: attachments)
+            )
             threads[peer, default: []].append(sent)
         } catch {
             note(error)
+        }
+    }
+
+    private func uploads(from attachments: [PendingAttachment]) -> [APIClient.AttachmentUpload]? {
+        guard !attachments.isEmpty else { return nil }
+        return attachments.map {
+            APIClient.AttachmentUpload(filename: $0.filename, mime: $0.mime, data: $0.data)
         }
     }
 
@@ -252,7 +270,10 @@ final class StudioStore {
 
     /// Answer a waiting card. The inbox removes it optimistically so the tap
     /// feels immediate; a failure puts it straight back.
-    func answer(card: ReplyCard, optionIdx: Int?, text: String?) async {
+    func answer(card: ReplyCard,
+                optionIdx: Int?,
+                text: String?,
+                attachments: [PendingAttachment] = []) async {
         let removed = waitingCards
         waitingCards.removeAll { $0.id == card.id }
         cardCounts.waiting = max(0, cardCounts.waiting - 1)
@@ -267,7 +288,12 @@ final class StudioStore {
 
         guard !session.isDemo else { return }
         do {
-            let updated = try await session.api.answer(cardId: card.id, optionIdx: optionIdx, text: text)
+            let updated = try await session.api.answer(
+                cardId: card.id,
+                optionIdx: optionIdx,
+                text: text,
+                attachments: uploads(from: attachments)
+            )
             cardDetails[card.id] = updated
             await refreshReplyCards()
             await refreshTasks()

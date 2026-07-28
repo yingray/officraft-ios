@@ -468,25 +468,44 @@ struct Composer: View {
     var accentSend: Bool = true
     var showsMarkdownToggle: Bool = false
     @Binding var markdownPreview: Bool
-    var onAttach: (() -> Void)?
+    /// Staged attachments. Empty binding means the composer has no `+`.
+    @Binding var attachments: [PendingAttachment]
+    var onPickPhotos: (() -> Void)?
+    var onPickFiles: (() -> Void)?
     var onSend: () -> Void
 
     @FocusState private var focused: Bool
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachments.isEmpty
     }
 
     var body: some View {
+        VStack(spacing: 8) {
+            if !attachments.isEmpty {
+                AttachmentTray(attachments: $attachments)
+            }
+            inputRow
+        }
+    }
+
+    private var inputRow: some View {
         HStack(alignment: .bottom, spacing: 9) {
-            if let onAttach {
-                Button(action: onAttach) {
+            if onPickPhotos != nil || onPickFiles != nil {
+                Menu {
+                    if let onPickPhotos {
+                        Button("照片") { onPickPhotos() }
+                    }
+                    if let onPickFiles {
+                        Button("檔案") { onPickFiles() }
+                    }
+                } label: {
                     Icon(.plus, size: 17)
                         .foregroundStyle(OC.labelSecondary)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(OC.surface))
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel("附加檔案")
             }
 
@@ -548,11 +567,11 @@ struct Composer: View {
 }
 
 extension Composer {
-    /// Convenience for the screens without a markdown toggle.
+    /// Convenience for the screens with neither a markdown toggle nor
+    /// attachments — the reply-card and task-message composers.
     init(text: Binding<String>,
          placeholder: String,
          accentSend: Bool = true,
-         onAttach: (() -> Void)? = nil,
          onSend: @escaping () -> Void) {
         self.init(
             text: text,
@@ -560,7 +579,9 @@ extension Composer {
             accentSend: accentSend,
             showsMarkdownToggle: false,
             markdownPreview: .constant(false),
-            onAttach: onAttach,
+            attachments: .constant([]),
+            onPickPhotos: nil,
+            onPickFiles: nil,
             onSend: onSend
         )
     }
