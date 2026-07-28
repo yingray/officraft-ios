@@ -18,7 +18,7 @@ struct ChatView: View {
     @State private var preview: PreviewTarget?
     @State private var previewAuthor = ""
     @State private var previewTimestamp: Date?
-    @State private var openCardId: String?
+    @State private var openCard: CardRoute?
 
     private var messages: [ChatMessage] { store.messages(with: peerId) }
 
@@ -30,8 +30,8 @@ struct ChatView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
-        .navigationDestination(item: $openCardId) { id in
-            AskDetailView(cardId: id)
+        .navigationDestination(item: $openCard) { route in
+            AskDetailView(cardId: route.id)
         }
         .attachmentPreview($preview, author: previewAuthor, timestamp: previewTimestamp)
         .task {
@@ -121,7 +121,7 @@ struct ChatView: View {
                                 preview = previewTarget(for: attachment,
                                                         in: message.attachments ?? [])
                             },
-                            onOpenCard: { openCardId = $0 }
+                            onOpenCard: { openCard = CardRoute(id: $0) }
                         )
                         .id(message.id)
                     }

@@ -7,8 +7,8 @@ struct OfficeView: View {
 
     @State private var tab: Tab = .members
     @State private var search = ""
-    @State private var openPeer: String?
-    @State private var openTaskId: String?
+    @State private var openPeer: PeerRoute?
+    @State private var openTask: TaskRoute?
 
     private enum Tab: Hashable { case members, outsource }
 
@@ -65,11 +65,11 @@ struct OfficeView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
-        .navigationDestination(item: $openPeer) { peer in
-            ChatView(peerId: peer)
+        .navigationDestination(item: $openPeer) { route in
+            ChatView(peerId: route.id)
         }
-        .navigationDestination(item: $openTaskId) { id in
-            TaskDetailView(taskId: id)
+        .navigationDestination(item: $openTask) { route in
+            TaskDetailView(taskId: route.id)
         }
         .refreshable { await store.refreshOffice() }
     }
@@ -109,7 +109,7 @@ struct OfficeView: View {
                     }
                     ForEach(filteredMembers) { member in
                         MemberRow(member: member) {
-                            openPeer = member.id
+                            openPeer = PeerRoute(id: member.id)
                         } onWake: {
                             Task { await store.wake(member: member) }
                         }
@@ -124,9 +124,9 @@ struct OfficeView: View {
                     }
                     ForEach(filteredWorkers) { worker in
                         OutsourceRow(worker: worker) {
-                            openPeer = worker.id
+                            openPeer = PeerRoute(id: worker.id)
                         } onOpenTask: { taskId in
-                            openTaskId = taskId
+                            openTask = TaskRoute(id: taskId)
                         }
                     }
                 }
@@ -158,49 +158,52 @@ private struct MemberRow: View {
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 12) {
-                Avatar(name: member.name, id: member.id,
-                       imageURL: member.avatarUrl.flatMap(URL.init(string:)),
-                       size: 42)
+        // Row taps and the 喚醒 button are siblings, not nested buttons — a
+        // Button inside a Button does not reliably receive its own taps.
+        HStack(spacing: 12) {
+            Avatar(name: member.name, id: member.id,
+                   imageURL: member.avatarUrl.flatMap(URL.init(string:)),
+                   size: 42)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 7) {
-                        Text(member.name)
-                            .font(.ocBody.weight(.semibold))
-                            .foregroundStyle(OC.label)
-                        PresenceDot(presence: member.presence)
-                    }
-                    Text(subtitle)
-                        .font(.ocFootnote)
-                        .foregroundStyle(OC.labelTertiary)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
+                    Text(member.name)
+                        .font(.ocBody.weight(.semibold))
+                        .foregroundStyle(OC.label)
+                    PresenceDot(presence: member.presence)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if member.unreadCount > 0 {
-                    CountBadge(count: member.unreadCount)
-                } else if !member.presence.isAwake {
-                    Button(action: onWake) {
-                        Text("喚醒")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(OC.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(OC.accentFill))
-                    }
-                    .buttonStyle(.plain)
-                }
+                Text(subtitle)
+                    .font(.ocFootnote)
+                    .foregroundStyle(OC.labelTertiary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .frame(minHeight: 64)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OC.surface)
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+
+            if member.unreadCount > 0 {
+                CountBadge(count: member.unreadCount)
+            } else if !member.presence.isAwake {
+                Button(action: onWake) {
+                    Text("喚醒")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(OC.accent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: OCMetrics.minTapTarget)
+                        .background(Capsule().fill(OC.accentFill))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .frame(minHeight: 64)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OC.surface)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
     }
 }
 
@@ -222,48 +225,47 @@ private struct OutsourceRow: View {
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 12) {
-                Avatar(name: worker.codename, id: worker.id, size: 42)
+        HStack(spacing: 12) {
+            Avatar(name: worker.codename, id: worker.id, size: 42)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text(worker.codename)
-                            .font(.ocBody.weight(.semibold))
-                            .foregroundStyle(OC.label)
-                        PresenceDot(presence: worker.presence)
-                    }
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.ocFootnote)
-                            .foregroundStyle(OC.labelTertiary)
-                            .lineLimit(1)
-                    } else {
-                        Text("待命 · \(worker.model ?? "—")")
-                            .font(.ocFootnote)
-                            .foregroundStyle(OC.labelTertiary)
-                    }
-                    if let taskId = worker.taskId,
-                       let task = store.tasks.first(where: { $0.id == taskId }) {
-                        Button { onOpenTask(taskId) } label: {
-                            TaskNumberChip(taskNo: task.taskNo, showsIcon: false)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(worker.codename)
+                        .font(.ocBody.weight(.semibold))
+                        .foregroundStyle(OC.label)
+                    PresenceDot(presence: worker.presence)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if worker.unreadCount > 0 {
-                    CountBadge(count: worker.unreadCount)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.ocFootnote)
+                        .foregroundStyle(OC.labelTertiary)
+                        .lineLimit(1)
+                } else {
+                    Text("待命 · \(worker.model ?? "—")")
+                        .font(.ocFootnote)
+                        .foregroundStyle(OC.labelTertiary)
+                }
+                if let taskId = worker.taskId,
+                   let task = store.tasks.first(where: { $0.id == taskId }) {
+                    Button { onOpenTask(taskId) } label: {
+                        TaskNumberChip(taskNo: task.taskNo, showsIcon: false)
+                            .frame(minHeight: 32)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OC.surface)
-            )
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if worker.unreadCount > 0 {
+                CountBadge(count: worker.unreadCount)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OC.surface)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
     }
 }

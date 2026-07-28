@@ -6,8 +6,8 @@ struct TasksView: View {
     @Environment(StudioStore.self) private var store
 
     @State private var filter: Filter = .open
-    @State private var openTaskId: String?
-    @State private var openCardId: String?
+    @State private var openTask: TaskRoute?
+    @State private var openCard: CardRoute?
     @State private var typeFilter: String?
     @State private var executorFilter: String?
 
@@ -55,11 +55,11 @@ struct TasksView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
-        .navigationDestination(item: $openTaskId) { id in
-            TaskDetailView(taskId: id)
+        .navigationDestination(item: $openTask) { route in
+            TaskDetailView(taskId: route.id)
         }
-        .navigationDestination(item: $openCardId) { id in
-            AskDetailView(cardId: id)
+        .navigationDestination(item: $openCard) { route in
+            AskDetailView(cardId: route.id)
         }
         .refreshable { await store.refreshTasks() }
     }
@@ -138,13 +138,13 @@ struct TasksView: View {
                 LazyVStack(spacing: 12) {
                     ForEach(visibleTasks) { task in
                         TaskRowView(task: task) {
-                            openTaskId = task.id
+                            openTask = TaskRoute(id: task.id)
                         } onDecide: {
                             // Jump straight to the card blocking this task.
                             if let cardId = blockingCardId(for: task) {
-                                openCardId = cardId
+                                openCard = CardRoute(id: cardId)
                             } else {
-                                openTaskId = task.id
+                                openTask = TaskRoute(id: task.id)
                             }
                         }
                     }

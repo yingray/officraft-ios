@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 任務 · 詳情 — the step timeline with definitions of done and, for gate
 /// steps, the reply card embedded so a decision never leaves the task.
@@ -10,7 +11,7 @@ struct TaskDetailView: View {
 
     @State private var detail: TaskDetail?
     @State private var message = ""
-    @State private var openCardId: String?
+    @State private var openCard: CardRoute?
     @State private var preview: PreviewTarget?
     @State private var didSendMessage = false
     @State private var isTracking = false
@@ -56,8 +57,8 @@ struct TaskDetailView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
-        .navigationDestination(item: $openCardId) { id in
-            AskDetailView(cardId: id)
+        .navigationDestination(item: $openCard) { route in
+            AskDetailView(cardId: route.id)
         }
         .attachmentPreview($preview,
                            author: detail.map { store.displayName(for: $0.executorId) } ?? "",
@@ -208,7 +209,7 @@ struct TaskDetailView: View {
                 HStack(alignment: .top, spacing: 12) {
                     TimelineNode(tint: step.status.nodeTint, isLast: index == steps.count - 1)
                     StepCard(step: step) { cardId in
-                        openCardId = cardId
+                        openCard = CardRoute(id: cardId)
                     } onAnswer: { cardId, optionIdx in
                         Task { await answer(cardId: cardId, optionIdx: optionIdx) }
                     }

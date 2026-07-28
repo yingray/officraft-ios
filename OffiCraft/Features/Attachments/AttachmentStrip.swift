@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Tap targets for attachments — image thumbnails and `.md` chips.
 ///

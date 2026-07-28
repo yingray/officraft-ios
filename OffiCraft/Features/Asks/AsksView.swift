@@ -10,9 +10,8 @@ struct AsksView: View {
     @State private var openCard: ReplyCard?
     @State private var writeOwnFor: ReplyCard?
     @State private var expireCandidate: ReplyCard?
-    @State private var openTask: TaskRef?
+    @State private var openTask: TaskRoute?
     @State private var preview: PreviewTarget?
-    @State private var previewSiblings: [Attachment] = []
 
     private enum Tab: Hashable { case waiting, handled }
 
@@ -53,8 +52,8 @@ struct AsksView: View {
         .navigationDestination(item: $openCard) { card in
             AskDetailView(cardId: card.id)
         }
-        .navigationDestination(item: $openTask) { ref in
-            TaskDetailView(taskId: ref.id)
+        .navigationDestination(item: $openTask) { route in
+            TaskDetailView(taskId: route.id)
         }
         .sheet(item: $writeOwnFor) { card in
             WriteOwnAnswerSheet(card: card)
@@ -135,10 +134,9 @@ struct AsksView: View {
                 },
                 onOpenDetail: { openCard = card },
                 onWriteOwn: { writeOwnFor = card },
-                onOpenTask: { openTask = $0 },
+                onOpenTask: { openTask = TaskRoute($0) },
                 onOpenAttachment: { attachment in
-                    previewSiblings = card.attachments ?? []
-                    preview = previewTarget(for: attachment, in: previewSiblings)
+                    preview = previewTarget(for: attachment, in: card.attachments ?? [])
                 }
             )
             // Interaction rules: left swipe marks expired (confirmed), right

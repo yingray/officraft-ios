@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 連到你的工作室 — the first-run screen.
 ///
@@ -29,19 +30,23 @@ struct LoginView: View {
         ZStack {
             OC.bg.ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                    fields
-                    Spacer(minLength: 20)
-                    troubleshooting
+            // The troubleshooting note sits at the bottom of the viewport when
+            // the content is short, and scrolls with it when the keyboard is up.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        header
+                        fields
+                        Spacer(minLength: 20)
+                        troubleshooting
+                    }
+                    .padding(.horizontal, 26)
+                    .padding(.top, 34)
+                    .padding(.bottom, 28)
+                    .frame(minHeight: geo.size.height, alignment: .top)
                 }
-                .padding(.horizontal, 26)
-                .padding(.top, 34)
-                .padding(.bottom, 28)
-                .frame(minHeight: UIScreen.main.bounds.height - 100, alignment: .top)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .scrollDismissesKeyboard(.interactively)
         }
         .onAppear {
             if host.isEmpty, let existing = session.activeHost {

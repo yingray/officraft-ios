@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// iPhone shell: the five sections in a system tab bar.
 ///

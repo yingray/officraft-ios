@@ -325,10 +325,7 @@ struct GroupedRow<Trailing: View>: View {
             .contentShape(Rectangle())
 
             if !isLast {
-                Rectangle()
-                    .fill(OC.separator)
-                    .frame(height: 1 / UIScreen.main.scale)
-                    .padding(.leading, 14)
+                Hairline(inset: 14)
             }
         }
     }
@@ -574,11 +571,12 @@ extension Composer {
 /// Hairline divider that matches the grouped-list separator weight.
 struct Hairline: View {
     var inset: CGFloat = 0
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         Rectangle()
             .fill(OC.separator)
-            .frame(height: 1 / UIScreen.main.scale)
+            .frame(height: 1 / max(displayScale, 1))
             .padding(.leading, inset)
     }
 }

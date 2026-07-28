@@ -35,7 +35,7 @@ struct AskCardView: View {
                 }
             }
 
-            if card.task != nil || !card.kind.isEmpty {
+            if card.task != nil {
                 taskRow
             }
 
@@ -120,10 +120,8 @@ struct AskCardView: View {
 
     private var taskRow: some View {
         HStack(spacing: 8) {
-            if !card.kind.isEmpty, let task = card.task, !task.typeKey.isEmpty {
-                StatusChip(text: task.typeKey, tint: OC.taskType, showsDot: false, mono: true)
-            } else if let task = card.task, !task.typeKey.isEmpty {
-                StatusChip(text: task.typeKey, tint: OC.taskType, showsDot: false, mono: true)
+            if let typeKey = card.task?.typeKey, !typeKey.isEmpty {
+                StatusChip(text: typeKey, tint: OC.taskType, showsDot: false, mono: true)
             }
             if let task = card.task {
                 Button {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 請示 · 單卡決策 — one card, one decision, full screen.
 ///
@@ -14,8 +15,8 @@ struct AskDetailView: View {
     @State private var card: ReplyCard?
     @State private var ownAnswer = ""
     @State private var preview: PreviewTarget?
-    @State private var openTask: TaskRef?
-    @State private var showOriginal = false
+    @State private var openTask: TaskRoute?
+    @State private var openPeer: PeerRoute?
 
     /// Position within the waiting queue, shown as "1 / 3".
     private var queuePosition: (index: Int, total: Int)? {
@@ -65,15 +66,11 @@ struct AskDetailView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
-        .navigationDestination(item: $openTask) { ref in
-            TaskDetailView(taskId: ref.id)
+        .navigationDestination(item: $openTask) { route in
+            TaskDetailView(taskId: route.id)
         }
-        // Declared at the stack level, not inside the button, so SwiftUI can
-        // always resolve the destination.
-        .navigationDestination(isPresented: $showOriginal) {
-            if let card {
-                ChatView(peerId: card.from, highlightMessageId: card.chatMessageId)
-            }
+        .navigationDestination(item: $openPeer) { route in
+            ChatView(peerId: route.id, highlightMessageId: route.highlightMessageId)
         }
         .attachmentPreview($preview,
                            author: card.map { store.displayName(for: $0.from) } ?? "",
@@ -120,7 +117,7 @@ struct AskDetailView: View {
                         }
                     }
                     if let task = card?.task {
-                        Button("查看任務詳情") { openTask = task }
+                        Button("查看任務詳情") { openTask = TaskRoute(task) }
                     }
                     Button("複製問題") {
                         UIPasteboard.general.string = card?.summary
@@ -153,7 +150,7 @@ struct AskDetailView: View {
             }
             Spacer(minLength: 6)
             Button {
-                showOriginal = true
+                openPeer = PeerRoute(id: card.from, highlightMessageId: card.chatMessageId)
             } label: {
                 Text("原訊息")
                     .font(.ocCaption)
