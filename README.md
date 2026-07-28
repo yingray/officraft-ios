@@ -23,6 +23,16 @@ open OffiCraft.xcodeproj
 The `.xcodeproj` is generated, not checked in. Edit `project.yml` and
 regenerate rather than changing project settings in the Xcode UI.
 
+### Logic tests
+
+```bash
+./scripts/run-logic-tests.sh
+```
+
+The markdown parser, SVG path parser and duration formatting do not touch
+UIKit, so they compile and run against the macOS SDK — no Xcode, no simulator.
+Fast enough to run on every change.
+
 ### Unsigned .ipa
 
 ```bash
