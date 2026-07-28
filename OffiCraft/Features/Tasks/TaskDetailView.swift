@@ -13,6 +13,7 @@ struct TaskDetailView: View {
     @State private var openCardId: String?
     @State private var preview: PreviewTarget?
     @State private var didSendMessage = false
+    @State private var isTracking = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,6 +64,33 @@ struct TaskDetailView: View {
                            taskNo: detail?.taskNo)
         .task {
             detail = await store.loadTaskDetail(taskId)
+            isTracking = LiveActivityController.shared.isTracking(taskId)
+        }
+        .onChange(of: store.taskDetails[taskId]) {
+            // Keep a running Live Activity in step with the task it tracks.
+            guard isTracking, let detail = store.taskDetails[taskId] else { return }
+            Task {
+                await LiveActivityController.shared.update(
+                    task: detail,
+                    waitingCards: store.waitingCardCount
+                )
+            }
+        }
+    }
+
+    /// 任務進度走 Live Activity — start or stop watching this task on the
+    /// Lock Screen and in the Dynamic Island.
+    private func toggleLiveActivity(_ detail: TaskDetail) {
+        if isTracking {
+            Task { await LiveActivityController.shared.end() }
+            isTracking = false
+        } else {
+            LiveActivityController.shared.start(
+                task: detail,
+                executorName: store.displayName(for: detail.executorId),
+                waitingCards: store.waitingCardCount
+            )
+            isTracking = true
         }
     }
 
@@ -92,6 +120,11 @@ struct TaskDetailView: View {
 
                 Menu {
                     if let detail {
+                        if LiveActivityController.shared.isSupported {
+                            Button(isTracking ? "停止鎖定畫面追蹤" : "在鎖定畫面追蹤") {
+                                toggleLiveActivity(detail)
+                            }
+                        }
                         Menu("優先權") {
                             ForEach([TaskPriority.high, .mid, .low, .frozen], id: \.self) { priority in
                                 Button(priority.label) {

@@ -12,8 +12,12 @@ struct OffiCraftApp: App {
                 .preferredColorScheme(session.appearance.colorScheme)
                 .tint(OC.accent)
                 .task {
-                    await session.bootstrap()
                     appDelegate.session = session
+                    NotificationCoordinator.shared.session = session
+                    await session.bootstrap()
+                    if session.askPushEnabled {
+                        await NotificationCoordinator.shared.requestAuthorization()
+                    }
                 }
         }
     }

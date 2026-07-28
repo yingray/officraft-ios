@@ -295,8 +295,10 @@ struct GroupedRow<Trailing: View>: View {
     let title: String
     var titleTint: Color = OC.label
     var isLast: Bool = false
-    var action: (() -> Void)?
+    // `trailing` sits before `action` so an unlabelled trailing closure binds
+    // to the view builder, and taps are always passed as `action:`.
     @ViewBuilder var trailing: Trailing
+    var action: (() -> Void)?
 
     var body: some View {
         Group {
@@ -337,7 +339,8 @@ extension GroupedRow where Trailing == EmptyView {
          titleTint: Color = OC.label,
          isLast: Bool = false,
          action: (() -> Void)? = nil) {
-        self.init(title: title, titleTint: titleTint, isLast: isLast, action: action) { EmptyView() }
+        self.init(title: title, titleTint: titleTint, isLast: isLast,
+                  trailing: { EmptyView() }, action: action)
     }
 }
 
