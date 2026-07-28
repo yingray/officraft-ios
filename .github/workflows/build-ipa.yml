@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    name: Unsigned IPA
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          echo "--- iOS SDKs ---"
+          xcodebuild -showsdks | grep -i iphoneos || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Parsers and formatting are UIKit-free, so they run before the slow part
+      # and fail fast if something is wrong.
+      - name: Logic tests
+        run: ./scripts/run-logic-tests.sh
+
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project OffiCraft.xcodeproj \
+            -scheme OffiCraft \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -60
+
+      - name: Build unsigned IPA
+        run: ./scripts/build-ipa.sh Release
+
+      - name: Inspect payload
+        run: |
+          unzip -l dist/OffiCraft.ipa | head -30
+          echo "---"
+          ls -lh dist/OffiCraft.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OffiCraft-ipa
+          path: dist/OffiCraft.ipa
+          if-no-files-found: error
+          retention-days: 30
