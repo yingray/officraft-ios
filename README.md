@@ -43,6 +43,16 @@ Produces `dist/OffiCraft.ipa`. The build is unsigned — enough to inspect,
 resign, or side-load with your own certificate. To install on a device, resign
 with a provisioning profile that includes the app and its widget extension.
 
+### CI
+
+`.github/workflows/build-ipa.yml` runs the logic tests, a simulator build and
+the unsigned archive on a macOS runner, and uploads the `.ipa` as an artifact.
+Useful when there is no local Xcode:
+
+```bash
+gh run download <run-id> --name OffiCraft-ipa --dir dist
+```
+
 ## Layout
 
 | Path | What lives there |
