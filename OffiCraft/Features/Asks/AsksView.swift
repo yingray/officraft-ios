@@ -163,6 +163,11 @@ struct AsksView: View {
                 },
                 onShowAllOptions: { allOptionsFor = card }
             )
+            // The options are what makes this card decidable, and the list row
+            // does not carry them. Fetched when the row appears rather than a
+            // dozen at launch, so the inbox costs one request per card the
+            // owner can actually see.
+            .task { await store.hydrateCard(card.id) }
             // Interaction rules: left swipe marks expired (confirmed), right
             // swipe jumps to the original message.
             .swipeActions(edge: .leading, allowsFullSwipe: false) {

@@ -175,10 +175,6 @@ final class StudioStore {
         } catch {
             note(error)
         }
-        // Not awaited. The list is already on screen by now and the options
-        // fill in behind it; hydration is best-effort by design, and awaiting
-        // it put up to 12 round trips in front of the first paint.
-        Task { await self.hydrateWaitingCards() }
     }
 
     /// 近期已處理 — the answered and expired panes, fetched only while that tab
@@ -199,41 +195,45 @@ final class StudioStore {
         }
     }
 
-    /// Pull the body and options onto the waiting cards.
+    /// Pull the body and options onto one waiting card.
     ///
     /// `GET /api/reply-cards` returns a deliberately light row — the server's
     /// own note says the list carries no body and no options, they are one
-    /// `get_reply_card` away. But the whole design rests on the inbox card being
-    /// the decision surface ("選項就在卡上，零跳轉"), so the app has to fetch
-    /// them. Only the cards actually waiting on the owner, capped, and
-    /// best-effort: a card that fails to hydrate still shows its question and
+    /// `get_reply_card` away. But the whole design rests on the inbox card
+    /// being the decision surface ("選項就在卡上，零跳轉"), so the app has to
+    /// fetch them.
+    ///
+    /// Per card, on demand, driven by the row appearing. It used to be a fixed
+    /// dozen fired at launch whether or not anything was on screen — half of
+    /// every launch's traffic for cards the owner had not scrolled to yet, on a
+    /// server that runs its queries through one connection.
+    ///
+    /// Best-effort: a card that fails to hydrate still shows its question and
     /// still opens.
-    private func hydrateWaitingCards() async {
-        let pending = waitingCards.prefix(hydrationLimit).filter { !$0.isDetailed }
-        guard !pending.isEmpty else { return }
-
-        let api = session.api
-        let details = await withTaskGroup(of: ReplyCard?.self,
-                                          returning: [String: ReplyCard].self) { group in
-            for card in pending {
-                let id = card.id
-                group.addTask { try? await api.replyCard(id: id) }
-            }
-            var collected: [String: ReplyCard] = [:]
-            for await detail in group {
-                if let detail { collected[detail.id] = detail }
-            }
-            return collected
+    func hydrateCard(_ id: String) async {
+        guard !session.isDemo else { return }
+        if let cached = cardDetails[id], cached.isDetailed {
+            apply(detail: cached)
+            return
         }
-        guard !details.isEmpty else { return }
+        // A row can appear, scroll away and come back while its fetch is still
+        // in the air; without this that is a second identical request.
+        guard !hydrating.contains(id) else { return }
+        hydrating.insert(id)
+        defer { hydrating.remove(id) }
 
-        for (id, detail) in details { cardDetails[id] = detail }
-        waitingCards = waitingCards.map { details[$0.id] ?? $0 }
+        guard let detail = try? await session.api.replyCard(id: id) else { return }
+        cardDetails[id] = detail
+        apply(detail: detail)
     }
 
-    /// Enough to cover an inbox a person could actually work through. Past this
-    /// the owner is not deciding card by card anyway.
-    private let hydrationLimit = 12
+    private func apply(detail: ReplyCard) {
+        guard let index = waitingCards.firstIndex(where: { $0.id == detail.id }) else { return }
+        waitingCards[index] = detail
+    }
+
+    /// Cards with a hydration request already in flight.
+    private var hydrating: Set<String> = []
 
     /// The list endpoint omits `body`/`options`, so the single-card screen
     /// fetches the full card once and caches it.
