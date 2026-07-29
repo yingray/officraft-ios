@@ -265,16 +265,6 @@ struct ChatMessage: Codable, Identifiable, Hashable {
 
 // MARK: - Monitoring
 
-struct UsageWindow: Codable, Hashable {
-    var pct: Double?
-    var used: Double?
-    var limit: Double?
-    var resetsTs: Double?
-    /// The server echoes the provider's own wording ("Max 20x"); the design doc
-    /// shows it verbatim under the meters.
-    var label: String?
-}
-
 struct MonitorAccount: Codable, Identifiable, Hashable {
     var account: String = ""
     var accountLabel: String?
@@ -286,8 +276,11 @@ struct MonitorAccount: Codable, Identifiable, Hashable {
 
     var id: String { "\(account)@\(machine)" }
 
-    /// 過熱 threshold — the design doc paints the 7-day meter red at 86%.
-    var isOverheated: Bool { (sevenDay?.pct ?? 0) >= 0.8 }
+    /// 過熱 is the server's verdict, not a client-side cutoff: it compares
+    /// spend against elapsed time (`PaceMarginPct`), which an absolute
+    /// threshold cannot express. Only the 7-day window is ever painted hot,
+    /// matching the web console.
+    var isOverheated: Bool { sevenDay?.isHot == true }
 }
 
 struct MonitorMachine: Codable, Identifiable, Hashable {
@@ -306,6 +299,11 @@ struct MonitorMachine: Codable, Identifiable, Hashable {
 
     /// The roster line reads 忙碌 / 待機 off the agent count.
     var activityLabel: String { agents > 0 ? "忙碌" : "待機" }
+
+    // The wire carries these on a 0..100 scale; the UI works in fractions.
+    var cpuFraction: Double? { cpuPct.map { $0 / 100 } }
+    var ramFraction: Double? { ramPct.map { $0 / 100 } }
+    var batteryFraction: Double? { batteryPct.map { $0 / 100 } }
 }
 
 struct MonitorSession: Codable, Identifiable, Hashable {
@@ -317,10 +315,13 @@ struct MonitorSession: Codable, Identifiable, Hashable {
     var model: String?
     var effort: Effort = .medium
     var presence: Presence = .offline
+    /// Context window usage, 0..100 on the wire.
     var contextPct: Double?
     var cost: Double?
     var bankedCost: Double?
     var compactionCount: Int?
+
+    var contextFraction: Double? { contextPct.map { $0 / 100 } }
 }
 
 struct MonitorSnapshot: Codable, Hashable {

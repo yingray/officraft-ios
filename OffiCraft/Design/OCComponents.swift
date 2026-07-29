@@ -136,6 +136,9 @@ struct OCProgressBar: View {
     let value: Double
     var tint: Color = OC.accent
     var height: CGFloat = 6
+    /// Optional reference tick, 0…1. The usage meters put elapsed time here so
+    /// "過熱" (spending faster than the clock) is visible, not just asserted.
+    var marker: Double?
 
     var body: some View {
         GeometryReader { geo in
@@ -144,11 +147,21 @@ struct OCProgressBar: View {
                 Capsule()
                     .fill(tint)
                     .frame(width: max(0, min(1, value)) * geo.size.width)
+                if let marker {
+                    Rectangle()
+                        .fill(OC.label.opacity(0.55))
+                        .frame(width: 1.5)
+                        .offset(x: max(0, min(1, marker)) * geo.size.width - 0.75)
+                }
             }
         }
         .frame(height: height)
         .accessibilityElement()
-        .accessibilityValue(Text("\(Int((value * 100).rounded()))%"))
+        .accessibilityValue(
+            Text(marker == nil
+                 ? "\(Int((value * 100).rounded()))%"
+                 : "已用 \(Int((value * 100).rounded()))%，時間進度 \(Int(((marker ?? 0) * 100).rounded()))%")
+        )
     }
 }
 

@@ -111,15 +111,16 @@ private struct AccountCard: View {
                 }
             }
 
-            VStack(spacing: 6) {
-                meter(title: "7 日視窗", window: account.sevenDay, emphasise: true)
-                meter(title: "5 小時視窗", window: account.fiveHour, emphasise: false)
+            VStack(spacing: 8) {
+                meter(title: "7 日視窗", window: account.sevenDay, judged: true)
+                meter(title: "5 小時視窗", window: account.fiveHour, judged: false)
             }
 
             if let label = account.accountLabel, !label.isEmpty {
                 Text("回報標籤原文 · \(label)")
                     .font(.ocCaption)
                     .foregroundStyle(OC.labelQuaternary)
+                    .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -129,22 +130,35 @@ private struct AccountCard: View {
         )
     }
 
+    /// `judged` marks the window the server actually rules on — only the 7-day
+    /// one carries a pace verdict, same as the web console.
     @ViewBuilder
-    private func meter(title: String, window: UsageWindow?, emphasise: Bool) -> some View {
-        let value = window?.pct ?? 0
-        let hot = emphasise && value >= 0.8
+    private func meter(title: String, window: UsageWindow?, judged: Bool) -> some View {
+        let used = window?.usedFraction
+        let elapsed = window?.elapsedFraction
+        let hot = judged && window?.isHot == true
         VStack(spacing: 5) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(title)
                     .font(.ocFootnoteSmall)
                     .foregroundStyle(OC.labelTertiary)
-                Spacer()
-                Text(OCFormat.percent(window?.pct))
+                Spacer(minLength: 4)
+                if let elapsed {
+                    // The tick on the bar is the same number; spelling it out
+                    // makes the 過熱 verdict checkable rather than magic.
+                    Text("時間 \(OCFormat.percent(elapsed))")
+                        .font(.ocCaptionSmall)
+                        .foregroundStyle(OC.labelQuaternary)
+                        .monospacedDigit()
+                }
+                Text(OCFormat.percent(used))
                     .font(.system(size: 12.5, weight: hot ? .semibold : .regular))
                     .foregroundStyle(hot ? OC.overheat : OC.labelTertiary)
                     .monospacedDigit()
             }
-            OCProgressBar(value: value, tint: hot ? OC.overheat : OC.accent)
+            OCProgressBar(value: used ?? 0,
+                          tint: hot ? OC.overheat : OC.accent,
+                          marker: elapsed)
         }
     }
 }
@@ -175,14 +189,14 @@ private struct MachineCard: View {
             // The wire reports percentages only, so the readout is percentages
             // rather than the mock's absolute "11.4／16 GB".
             HStack(spacing: 18) {
-                if let cpu = machine.cpuPct {
+                if let cpu = machine.cpuFraction {
                     Text("CPU \(OCFormat.percent(cpu))")
                 }
-                if let ram = machine.ramPct {
+                if let ram = machine.ramFraction {
                     Text("RAM \(OCFormat.percent(ram))")
                 }
                 Text("\(machine.agents) sessions")
-                if let battery = machine.batteryPct, machine.acPower != true {
+                if let battery = machine.batteryFraction, machine.acPower != true {
                     Text("電量 \(OCFormat.percent(battery))")
                 }
             }
@@ -204,7 +218,7 @@ private struct SessionCard: View {
     let threshold: Double
     var isOutsource: Bool
 
-    private var contextValue: Double { session.contextPct ?? 0 }
+    private var contextValue: Double { session.contextFraction ?? 0 }
     /// Past the threshold the session is about to hand over — worth flagging.
     private var nearHandover: Bool { contextValue >= threshold }
 
@@ -225,7 +239,7 @@ private struct SessionCard: View {
                 }
             }
 
-            if session.contextPct != nil {
+            if session.contextFraction != nil {
                 VStack(spacing: 5) {
                     HStack {
                         Text("記憶用量")
