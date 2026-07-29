@@ -314,6 +314,10 @@ struct TableBlock: View {
     }
 
     var body: some View {
+        // The table scrolls, the page never does. A wide table gets its own
+        // horizontally scrolling region nested in the vertical one, which is
+        // both what GitHub, Obsidian and Apple Notes do and what WCAG 1.4.10
+        // requires: the two-dimensional scroll has to be confined to the table.
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
@@ -338,6 +342,9 @@ struct TableBlock: View {
                 }
             }
         }
+        // A table that already fits must not rubber-band, or every one of them
+        // reads as scrollable.
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(OC.hairline, lineWidth: 1)
@@ -345,27 +352,39 @@ struct TableBlock: View {
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
+    /// The header this column's values belong to, for the accessibility label.
+    /// A cell read on its own — "450" — means nothing without it, and SwiftUI
+    /// has no equivalent of UIKit's data-table container semantics to carry the
+    /// relationship, so the label is the only channel there is.
+    private func columnHeader(_ column: Int) -> String {
+        header.indices.contains(column) ? header[column] : ""
+    }
+
     private func cell(_ text: String, isHeader: Bool, column: Int) -> some View {
-        Text(MarkdownParser.inline(text))
-            .font(.system(size: 12.5, weight: isHeader ? .bold : .regular))
-            .foregroundStyle(isHeader ? OC.labelSecondary : OC.labelBody)
-            .multilineTextAlignment(textAlignment(column))
-            // One line per cell, deliberately. The enclosing ScrollView
-            // proposes unbounded width, so anything that wraps would be
-            // measured for one line and then laid out taller, spilling into
-            // the neighbouring rows. A long value widens the table instead and
-            // the reader scrolls — which is what the interaction rules allow
-            // tables to do.
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            // maxHeight fills the row so the header tint has no vertical gaps:
-            // a cell frame constrains width only, and a short label would
-            // otherwise sit centred with untinted bands above and below.
-            .frame(minWidth: column == 0 ? 96 : 66,
-                   maxHeight: .infinity,
-                   alignment: frameAlignment(column))
-            // The tint has to sit on the cell — GridRow takes no background.
-            .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
+        // Cells wrap rather than truncate, inside a clamped column width. The
+        // clamp is what makes wrapping safe here — see TableCellWidthCap for
+        // the Grid measurement trap that otherwise overlaps rows, and which is
+        // why this cell used to be limited to one line.
+        TableCellWidthCap(minWidth: column == 0 ? 96 : 72, maxWidth: 260) {
+            Text(MarkdownParser.inline(text))
+                .font(.system(size: 12.5, weight: isHeader ? .bold : .regular))
+                .foregroundStyle(isHeader ? OC.labelSecondary : OC.labelBody)
+                .multilineTextAlignment(textAlignment(column))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: frameAlignment(column))
+        }
+        // maxHeight fills the row so the header tint has no vertical gaps:
+        // a cell frame constrains width only, and a short label would
+        // otherwise sit centred with untinted bands above and below.
+        .frame(maxHeight: .infinity)
+        // The tint has to sit on the cell — GridRow takes no background.
+        .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
+        .accessibilityElement()
+        .accessibilityLabel(
+            isHeader || columnHeader(column).isEmpty
+                ? text
+                : "\(columnHeader(column))，\(text)"
+        )
     }
 }
