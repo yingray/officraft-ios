@@ -233,6 +233,14 @@ private struct AskListColumn: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
+        // Same rule as the iPhone inbox: the handled panes are fetched when
+        // this tab is opened, not at launch.
+        .task(id: tab) {
+            if tab == .handled { await store.refreshHandledCards() }
+        }
+        .onChange(of: store.cardCounts.answered) {
+            if tab == .handled { Task { await store.refreshHandledCards() } }
+        }
     }
 }
 

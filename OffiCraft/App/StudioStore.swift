@@ -36,6 +36,9 @@ final class StudioStore {
 
     private unowned let session: AppSession
     private var eventTask: Task<Void, Never>?
+    /// Whether `loadAll` has finished once. Gates the stream's first-connect
+    /// resync, which would otherwise duplicate that very load.
+    private var hasLoadedOnce = false
 
     init(session: AppSession) {
         self.session = session
@@ -117,6 +120,7 @@ final class StudioStore {
             group.addTask { await self.refreshMonitoring() }
             group.addTask { await self.refreshSettings() }
         }
+        hasLoadedOnce = true
     }
 
     private func loadDemo() {
@@ -138,27 +142,31 @@ final class StudioStore {
         )
     }
 
-    /// Each pane is taken on its own. They used to share one `try`, so a single
-    /// bad fetch blanked the others — one unreadable answered row was enough to
-    /// leave 近期已處理 empty while 待回覆 looked fine.
+    /// The 待回覆 pane and the counts — everything the inbox needs to paint.
+    ///
+    /// The handled panes are deliberately not here. Their tab label reads
+    /// `cardCounts`, which `/count` already carries, so fetching those two
+    /// lists before the owner opens that tab buys nothing — and it is not free:
+    /// on the server each one is another full scan of `reply_card` plus a task
+    /// lookup per row, and the server runs every query through a single SQLite
+    /// connection, so firing them concurrently from here does not make them
+    /// cheaper. See `refreshHandledCards()`.
+    ///
+    /// Each pane is taken on its own `do`. They used to share one `try`, so a
+    /// single bad fetch blanked the others.
     func refreshReplyCards() async {
         guard !session.isDemo else { return }
 
         async let waiting = session.api.replyCards(status: .waiting)
-        async let answered = session.api.replyCards(status: .answered, limit: 20)
-        async let expired = session.api.replyCards(status: .expired, limit: 10)
         async let counts = session.api.replyCardCounts()
 
         do {
-            waitingCards = try await waiting.sorted { $0.createdTs < $1.createdTs }
-        } catch {
-            note(error)
-        }
-        do {
-            let handled = try await (answered + expired)
-            handledCards = handled.sorted {
-                ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
-            }
+            let fresh = try await waiting.sorted { $0.createdTs < $1.createdTs }
+            // Carry over what is already hydrated. A light row would otherwise
+            // overwrite a full card and send it back through hydration on
+            // every single refresh. A reply-card delta clears `cardDetails`,
+            // so a card that actually changed still comes back fresh.
+            waitingCards = fresh.map { cardDetails[$0.id] ?? $0 }
         } catch {
             note(error)
         }
@@ -167,7 +175,28 @@ final class StudioStore {
         } catch {
             note(error)
         }
-        await hydrateWaitingCards()
+        // Not awaited. The list is already on screen by now and the options
+        // fill in behind it; hydration is best-effort by design, and awaiting
+        // it put up to 12 round trips in front of the first paint.
+        Task { await self.hydrateWaitingCards() }
+    }
+
+    /// 近期已處理 — the answered and expired panes, fetched only while that tab
+    /// is open.
+    func refreshHandledCards() async {
+        guard !session.isDemo else { return }
+
+        async let answered = session.api.replyCards(status: .answered, limit: 20)
+        async let expired = session.api.replyCards(status: .expired, limit: 10)
+
+        do {
+            let handled = try await (answered + expired)
+            handledCards = handled.sorted {
+                ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
+            }
+        } catch {
+            note(error)
+        }
     }
 
     /// Pull the body and options onto the waiting cards.
@@ -549,6 +578,13 @@ final class StudioStore {
     }
 
     private func resyncAll() async {
+        // The stream fires this on its FIRST connect too, not only on a
+        // genuine reconnect — by design, since there is no replay and a caller
+        // that connected late would otherwise miss everything. But `loadAll`
+        // opens the stream before it starts fetching, so at launch this would
+        // run a second, serial copy of the load already in flight. Skip it
+        // until the first load has actually happened.
+        guard hasLoadedOnce else { return }
         await refreshReplyCards()
         await refreshTasks()
         await refreshOffice()

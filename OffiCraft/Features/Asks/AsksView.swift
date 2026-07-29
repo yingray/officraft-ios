@@ -83,7 +83,24 @@ struct AsksView: View {
         } message: {
             Text("過期不算回答，成員會視情況重開一張新的。")
         }
-        .refreshable { await store.refreshReplyCards() }
+        // The handled panes are two more full table scans on the server, so
+        // they are pulled when the owner opens that tab and not before. The
+        // tab's own label comes from the counts endpoint, which the inbox
+        // fetches anyway.
+        .task(id: tab) {
+            if tab == .handled { await store.refreshHandledCards() }
+        }
+        // A card answered elsewhere moves the count; while this pane is open,
+        // that is the signal to re-read it.
+        .onChange(of: store.cardCounts.answered) {
+            if tab == .handled { Task { await store.refreshHandledCards() } }
+        }
+        .refreshable { await refresh() }
+    }
+
+    private func refresh() async {
+        await store.refreshReplyCards()
+        if tab == .handled { await store.refreshHandledCards() }
     }
 
     private var studioName: String {
