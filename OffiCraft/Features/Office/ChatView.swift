@@ -112,27 +112,56 @@ struct ChatView: View {
 
     // MARK: Transcript
 
+    /// One run with its messages already resolved.
+    ///
+    /// Deliberately values, not indices into `messages`. The transcript is a
+    /// `LazyVStack`, so a row's content closure can run well after it was
+    /// declared — and by then an SSE refetch may have replaced the thread with a
+    /// shorter array. Indexing at that point is an out-of-range crash; holding
+    /// the messages means the worst case is a row that renders one frame stale.
+    private struct ResolvedRun: Identifiable {
+        let lane: ChatLane
+        let messages: [ChatMessage]
+        let showsDaySeparator: Bool
+
+        /// Keyed by the first message, never by position: a positional key would
+        /// shift the moment a message lands and silently reopen or close a fold.
+        var id: String { messages.first?.id ?? "" }
+    }
+
     /// The transcript split into lanes: what the owner and the peer said to each
     /// other, and the agent-to-agent and system stretches folded out of it.
-    private var runs: [ChatLaneRun] {
-        ChatLane.runs(of: messages.map {
+    private var runs: [ResolvedRun] {
+        let all = messages
+        let lanes = all.map {
             ChatLane.classify(from: $0.from, to: $0.to, ownerId: session.ownerId)
-        })
+        }
+        return ChatLane.runs(of: lanes).map { run in
+            ResolvedRun(
+                lane: run.lane,
+                messages: Array(all[run.range]),
+                // Same rule as before: a separator whenever this run opens a new
+                // day relative to the message immediately before it.
+                showsDaySeparator: run.start == 0
+                    || !Calendar.current.isDate(all[run.start].sentAt,
+                                                inSameDayAs: all[run.start - 1].sentAt)
+            )
+        }
     }
 
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    ForEach(runs, id: \.start) { run in
-                        if shouldShowDaySeparator(at: run.start) {
-                            DaySeparator(date: messages[run.start].sentAt)
+                    ForEach(runs) { run in
+                        if run.showsDaySeparator, let first = run.messages.first {
+                            DaySeparator(date: first.sentAt)
                         }
                         if run.lane.isFolded {
                             foldedRun(run)
                         } else {
-                            ForEach(run.range, id: \.self) { index in
-                                directRow(messages[index])
+                            ForEach(run.messages) { message in
+                                directRow(message)
                             }
                         }
                     }
@@ -165,31 +194,27 @@ struct ChatView: View {
     /// id is the row that does.
     private var bottomAnchorId: String? {
         guard let last = runs.last else { return nil }
-        if last.lane.isFolded, !expandedRuns.contains(runId(last)) {
-            return runId(last)
+        if last.lane.isFolded, !expandedRuns.contains(last.id) {
+            return last.id
         }
-        return messages[last.range.upperBound - 1].id
+        return last.messages.last?.id
     }
 
-    /// Runs are keyed by their first message, not by their index: an index would
-    /// move the moment a new message lands and quietly reopen or close a fold.
-    private func runId(_ run: ChatLaneRun) -> String { messages[run.start].id }
-
     private func expandRun(containing messageId: String) {
-        guard let index = messages.firstIndex(where: { $0.id == messageId }),
-              let run = runs.first(where: { $0.range.contains(index) }),
-              run.lane.isFolded else { return }
-        expandedRuns.insert(runId(run))
+        guard let run = runs.first(where: { run in
+            run.lane.isFolded && run.messages.contains { $0.id == messageId }
+        }) else { return }
+        expandedRuns.insert(run.id)
     }
 
     @ViewBuilder
-    private func foldedRun(_ run: ChatLaneRun) -> some View {
-        let key = runId(run)
+    private func foldedRun(_ run: ResolvedRun) -> some View {
+        let key = run.id
         let isExpanded = expandedRuns.contains(key)
 
         VStack(alignment: .leading, spacing: 9) {
             ChatFoldRow(lane: run.lane,
-                        count: run.count,
+                        count: run.messages.count,
                         isExpanded: isExpanded,
                         participants: participants(in: run)) {
                 withAnimation(.snappy(duration: 0.22)) {
@@ -200,8 +225,7 @@ struct ChatView: View {
 
             if isExpanded {
                 ChatFoldedBody(lane: run.lane) {
-                    ForEach(run.range, id: \.self) { index in
-                        let message = messages[index]
+                    ForEach(run.messages) { message in
                         ChatFoldedMessageRow(
                             lane: run.lane,
                             header: routing(of: message),
@@ -243,22 +267,16 @@ struct ChatView: View {
 
     /// "Kyle ⇄ Sasha" — who a collapsed inter-agent run is between. Ordered by
     /// first appearance so the row does not reshuffle as messages arrive.
-    private func participants(in run: ChatLaneRun) -> String {
+    private func participants(in run: ResolvedRun) -> String {
         guard run.lane == .interAgent else { return "" }
         var seen: [String] = []
-        for index in run.range {
-            for id in [messages[index].from, messages[index].to] where !seen.contains(id) {
+        for message in run.messages {
+            for id in [message.from, message.to] where !seen.contains(id) {
                 seen.append(id)
             }
         }
         if seen.count > 2 { return "\(seen.count) 方" }
         return seen.map { store.displayName(for: $0) }.joined(separator: " ⇄ ")
-    }
-
-    private func shouldShowDaySeparator(at index: Int) -> Bool {
-        guard index > 0 else { return true }
-        return !Calendar.current.isDate(messages[index].sentAt,
-                                        inSameDayAs: messages[index - 1].sentAt)
     }
 
     // MARK: Composer
