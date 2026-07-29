@@ -29,9 +29,9 @@ struct ChatView: View {
     /// reason as the runs above: an id survives an SSE refetch, a position
     /// does not.
     @State private var expandedMessages: Set<String> = []
-    /// Whether the transcript has already been placed once. Guards the
-    /// highlight jump so it happens on the first load and never again.
-    @State private var didAnchor = false
+    /// Whether the reply-card jump has already fired. It happens on the
+    /// first load with content and never again.
+    @State private var didJumpToHighlight = false
 
     private var messages: [ChatMessage] { store.messages(with: peerId) }
 
@@ -184,10 +184,10 @@ struct ChatView: View {
                             DaySeparator(date: first.sentAt)
                         }
                         if run.lane.isFolded {
-                            foldedRun(run)
+                            foldedRun(run, proxy: proxy)
                         } else {
                             ForEach(run.messages) { message in
-                                directRow(message)
+                                directRow(message, proxy: proxy)
                             }
                         }
                     }
@@ -196,75 +196,32 @@ struct ChatView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 10)
             }
+            // The framework's own answer to "a transcript opens on the newest
+            // message". This replaces a hand-rolled `scrollTo` that fired once
+            // and then again on a 0.35s timer: a one-shot offset always lost
+            // the race, because the rows near the bottom are only built when
+            // the scroll reaches them, and every markdown body redraws at its
+            // measured height after the first layout pass. An anchor is not a
+            // one-shot — the scroll view re-applies it whenever the content
+            // size changes, which is exactly what this content does.
+            //
+            // Dropped to nil when a reply card named a message: that entry
+            // point owns the position, and a bottom anchor would drag the
+            // reader off the target every time a body finished measuring.
+            .defaultScrollAnchor(highlightMessageId == nil ? .bottom : nil)
             .scrollDismissesKeyboard(.interactively)
-            // Driven by the message list, not by appear. On a first visit the
-            // thread is still being fetched when this view appears, so anything
-            // that reads `messages` at that moment sees an empty array — which
-            // is why arriving from a reply card used to land at the bottom
-            // instead of on the message it named.
-            // Keyed on the last row rather than the message count: a refetch
-            // that replaces the tail without changing its length has to move
-            // the view too, and the count would not notice.
-            .onChange(of: bottomAnchorId, initial: true) {
-                guard !messages.isEmpty else { return }
-                settle(proxy)
+            // Only the highlight jump is left. Keyed on the thread gaining
+            // content, because on a first visit the messages are still being
+            // fetched when this view appears.
+            .onChange(of: messages.count, initial: true) {
+                guard let highlightMessageId, !didJumpToHighlight,
+                      !messages.isEmpty else { return }
+                didJumpToHighlight = true
+                // The fold has to be open before the target exists to scroll to.
+                expandRun(containing: highlightMessageId)
+                proxy.scrollTo(highlightMessageId, anchor: .center)
             }
         }
-    }
-
-    /// Puts the transcript where it should be: on the anchored message the first
-    /// time the thread has content, at the bottom on every later change.
-    private func settle(_ proxy: ScrollViewProxy) {
-        if let highlightMessageId, !didAnchor {
-            didAnchor = true
-            expandRun(containing: highlightMessageId)
-            // The fold has to be open before the target exists to scroll to.
-            scrollAgainAfterLayout(proxy, to: highlightMessageId, anchor: .center)
-            return
-        }
-
-        let isArrival = !didAnchor
-        didAnchor = true
-        guard let anchor = bottomAnchorId else { return }
-
-        if isArrival {
-            // No animation on arrival: the thread should already be at the
-            // bottom when it appears, not scroll there in front of the reader.
-            proxy.scrollTo(anchor, anchor: .bottom)
-            scrollAgainAfterLayout(proxy, to: anchor, anchor: .bottom)
-        } else {
-            withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
-            scrollAgainAfterLayout(proxy, to: anchor, anchor: .bottom)
-        }
-    }
-
-    /// Scrolls again once layout has caught up.
-    ///
-    /// One `scrollTo` is not enough here and this is not paranoia: the
-    /// transcript is a `LazyVStack`, so the rows below the fold do not exist
-    /// yet when the first call runs, and a markdown body — a table, a code
-    /// block, an image thumbnail that has not loaded — settles its final height
-    /// after the first layout pass. Both move the real bottom out from under
-    /// the scroll that just happened, which is what "sometimes it does not go
-    /// to the bottom" looks like.
-    private func scrollAgainAfterLayout(_ proxy: ScrollViewProxy,
-                                        to id: String,
-                                        anchor: UnitPoint) {
-        DispatchQueue.main.async { proxy.scrollTo(id, anchor: anchor) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            proxy.scrollTo(id, anchor: anchor)
-        }
-    }
-
-    /// The id to scroll to for "the bottom". A collapsed run hides its messages,
-    /// so the last message's id may not exist in the hierarchy — the run's own
-    /// id is the row that does.
-    private var bottomAnchorId: String? {
-        guard let last = runs.last else { return nil }
-        if last.lane.isFolded, !expandedRuns.contains(last.id) {
-            return foldRowId(last)
-        }
-        return last.messages.last?.id
     }
 
     /// The fold header's scroll id. Prefixed because the run is keyed by its
@@ -280,7 +237,7 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private func foldedRun(_ run: ResolvedRun) -> some View {
+    private func foldedRun(_ run: ResolvedRun, proxy: ScrollViewProxy) -> some View {
         let key = run.id
         let isExpanded = expandedRuns.contains(key)
 
@@ -303,7 +260,7 @@ struct ChatView: View {
                             header: routing(of: message),
                             message: message,
                             isExpanded: expandedMessages.contains(message.id),
-                            onToggleExpanded: { toggleMessage(message.id) },
+                            onToggleExpanded: { toggleMessage(message.id, proxy: proxy) },
                             onOpenAttachment: { attachment in
                                 openPreview(attachment, in: message)
                             }
@@ -315,22 +272,34 @@ struct ChatView: View {
         }
     }
 
-    private func directRow(_ message: ChatMessage) -> some View {
+    private func directRow(_ message: ChatMessage, proxy: ScrollViewProxy) -> some View {
         MessageRow(
             message: message,
             isOwn: message.isOwn(ownerId: session.ownerId),
             isHighlighted: message.id == highlightMessageId,
             isExpanded: expandedMessages.contains(message.id),
-            onToggleExpanded: { toggleMessage(message.id) },
+            onToggleExpanded: { toggleMessage(message.id, proxy: proxy) },
             onOpenAttachment: { attachment in openPreview(attachment, in: message) },
             onOpenCard: { openCard = CardRoute(id: $0) }
         )
         .id(message.id)
     }
 
-    private func toggleMessage(_ id: String) {
+    /// Collapsing takes the message's whole height back out of the transcript,
+    /// and the 收合 row sits at the BOTTOM of an open message — so when it is
+    /// tapped the message's top edge is far above the screen. A scroll offset
+    /// is a distance from the top of the content, so leaving it alone drops the
+    /// reader thousands of points further down, into material they have not
+    /// read. Re-anchor on the message that was just closed: with it folded to
+    /// 320pt the whole thing fits, which is the invariant a transcript has to
+    /// hold — the thing you are looking at does not move.
+    ///
+    /// Expanding needs no such thing: the cap is top-aligned, so a message
+    /// grows strictly downward and nothing already on screen shifts.
+    private func toggleMessage(_ id: String, proxy: ScrollViewProxy) {
         if expandedMessages.contains(id) {
             expandedMessages.remove(id)
+            proxy.scrollTo(id, anchor: .top)
         } else {
             expandedMessages.insert(id)
         }
