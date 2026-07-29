@@ -279,12 +279,22 @@ struct CodeBlock: View {
 /// column across every row. The previous per-row `HStack` sized each row from
 /// its own text, so a long cell in the body pushed that row's columns out of
 /// register with the header — the reported 跑版.
+/// The width the grid settles at, so the box can hug a table that does not need
+/// the full column.
+private struct TableContentWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct TableBlock: View {
     let header: [String]
     let rows: [[String]]
     var alignments: [MarkdownBlock.ColumnAlignment] = []
 
     @Environment(\.displayScale) private var displayScale
+    @State private var contentWidth: CGFloat = 0
 
     private var columnCount: Int {
         max(header.count, rows.map(\.count).max() ?? 0)
@@ -353,10 +363,22 @@ struct TableBlock: View {
             // Both scroll views are here to carry the overflow, so refuse the
             // squeeze and let them scroll.
             .fixedSize()
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: TableContentWidthKey.self,
+                                           value: proxy.size.width)
+                }
+            )
         }
         // A table that already fits must not rubber-band, or every one of them
         // reads as scrollable.
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .onPreferenceChange(TableContentWidthKey.self) { contentWidth = $0 }
+        // Hug a table narrower than the column. The border and the header tint
+        // stop at the last column instead of running on across empty space,
+        // which read as an unfinished table. A wider one is capped by what is
+        // available and scrolls, exactly as before.
+        .frame(maxWidth: contentWidth > 0 ? contentWidth : .infinity, alignment: .leading)
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(OC.hairline, lineWidth: 1)
