@@ -132,6 +132,10 @@ final class StudioStore {
         unreadTotal = DemoData.members.reduce(0) { $0 + $1.unreadCount }
         monitoring = DemoData.monitoring
         settings = DemoData.settings
+        chatRecency = ChatLane.directRecency(
+            DemoData.allChat.map { ChatRouting(from: $0.from, to: $0.to, ts: $0.ts) },
+            ownerId: DemoData.ownerId
+        )
     }
 
     func refreshReplyCards() async {
@@ -239,13 +243,48 @@ final class StudioStore {
             async let members = session.api.members()
             async let workers = session.api.outsourceWorkers()
             async let unread = session.api.unreadCount()
+            // Best-effort: the roster is still correct without it, the list
+            // just falls back to its alphabetical order.
+            async let recent = try? session.api.recentChat()
             self.members = try await members
             self.outsourceWorkers = try await workers
             self.unreadTotal = try await unread.unread
+            if let rows = await recent {
+                chatRecency = ChatLane.directRecency(
+                    rows.map { ChatRouting(from: $0.from, to: $0.to, ts: $0.ts) },
+                    ownerId: session.ownerId
+                )
+            }
         } catch {
             note(error)
         }
     }
+
+    /// When each peer last exchanged a message with the owner. Absent means
+    /// they never have. See `ChatLane.directRecency` for what counts.
+    private(set) var chatRecency: [String: Double] = [:]
+
+    func lastMessageTs(for peerId: String) -> Double? { chatRecency[peerId] }
+
+    /// Whoever wrote last is at the top, the way a messages list behaves.
+    /// Peers who have never exchanged a message keep the roster's own order —
+    /// awake first, then by name — below everyone who has.
+    private func byChatRecency<T>(_ items: [T], id: (T) -> String) -> [T] {
+        items.enumerated()
+            .map { (item: $1, order: $0, ts: chatRecency[id($1)]) }
+            .sorted { lhs, rhs in
+                switch (lhs.ts, rhs.ts) {
+                case let (left?, right?): return left > right
+                case (.some, .none): return true
+                case (.none, .some): return false
+                case (.none, .none): return lhs.order < rhs.order
+                }
+            }
+            .map(\.item)
+    }
+
+    var membersByChatRecency: [Member] { byChatRecency(activeMembers) { $0.id } }
+    var workersByChatRecency: [OutsourceWorker] { byChatRecency(outsourceWorkers) { $0.id } }
 
     func refreshMonitoring() async {
         guard !session.isDemo else { return }

@@ -63,10 +63,12 @@ struct AskCardView: View {
 
                     // Up to six they are all here. Past that the tail folds into
                     // one row that opens the options full screen — the card still
-                    // never asks the owner to scroll before deciding.
-                    let overflow = AskOptionLayout.overflowCount(total: options.count)
-                    if overflow > 0 {
-                        MoreOptionsRow(count: overflow, action: onShowAllOptions)
+                    // never asks the owner to scroll before deciding. The same
+                    // row also appears when nothing was folded but an option is
+                    // too long to read in two lines: truncation needs a door.
+                    if AskOptionLayout.needsFullList(options) {
+                        MoreOptionsRow(count: AskOptionLayout.overflowCount(total: options.count),
+                                       action: onShowAllOptions)
                     }
                 }
             }

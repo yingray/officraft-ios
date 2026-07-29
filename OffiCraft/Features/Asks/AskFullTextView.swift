@@ -206,19 +206,25 @@ struct AskFullTextView: View {
 
 // MARK: - The 其他 N 個 row
 
-/// Where the options past the fifth go. Same height as an option so the list
-/// still reads as one column, but visibly not a choice — picking it opens the
-/// full-screen list rather than answering anything.
+/// Where the options past the fifth go, and the way to read a long one in full.
+/// Same height as an option so the list still reads as one column, but visibly
+/// not a choice — picking it opens the full-screen list rather than answering.
 struct MoreOptionsRow: View {
+    /// Zero when nothing was folded away and the row exists only because an
+    /// option is too long to read where it sits.
     let count: Int
     var action: () -> Void
+
+    private var label: String {
+        count > 0 ? "其他 \(count) 個" : "看完整選項"
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Icon(.lines, size: 15)
                     .foregroundStyle(OC.labelTertiary)
-                Text("其他 \(count) 個")
+                Text(label)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(OC.labelBody)
                 Spacer(minLength: 8)
@@ -238,7 +244,7 @@ struct MoreOptionsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("其他 \(count) 個選項")
+        .accessibilityLabel(count > 0 ? "其他 \(count) 個選項" : "看完整選項")
     }
 }
 
@@ -267,8 +273,14 @@ struct AskOptionsFullScreenView: View {
                         TooManyOptionsNote(count: options.count)
                             .padding(.bottom, 3)
                     }
+                    // The one place an option is shown in full: the card and the
+                    // detail screen both cap it at two lines so no single
+                    // option can bury the rest, and this is where the rest of
+                    // the wording lives.
                     ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                        ReplyOptionRow(index: index, text: option, isRecommended: index == 0) {
+                        ReplyOptionRow(index: index, text: option,
+                                       isRecommended: index == 0,
+                                       wrapsFully: true) {
                             onAnswer(index)
                             dismiss()
                         }

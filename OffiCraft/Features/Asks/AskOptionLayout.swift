@@ -48,4 +48,27 @@ enum AskOptionLayout {
     static func suggestsFewerOptions(total: Int) -> Bool {
         total >= tooManyThreshold
     }
+
+    /// Roughly what fits in two lines of an option row on a phone.
+    ///
+    /// Counting characters is crude — it cannot know the rendered width — but
+    /// it only decides whether to *offer* a way to read the full text, so
+    /// erring toward offering it costs one row and never hides anything.
+    static let readableLength = 30
+
+    /// Whether any option is long enough that the card cannot show all of it.
+    ///
+    /// Apple's rule for truncated text is that there must be somewhere to read
+    /// the rest; on a card that somewhere is the full-screen option list, and
+    /// this is what decides whether to put a door to it on the card.
+    static func hasUnreadableOption(_ options: [String]) -> Bool {
+        options.contains { $0.count > readableLength }
+    }
+
+    /// Whether the card needs a way into the full-screen list at all: either
+    /// because options were folded away, or because one of them is too long to
+    /// read where it sits.
+    static func needsFullList(_ options: [String]) -> Bool {
+        overflowCount(total: options.count) > 0 || hasUnreadableOption(options)
+    }
 }

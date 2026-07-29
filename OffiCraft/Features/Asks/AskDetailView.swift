@@ -174,9 +174,10 @@ struct AskDetailView: View {
                 }
             }
 
-            let overflow = AskOptionLayout.overflowCount(total: options.count)
-            if overflow > 0 {
-                MoreOptionsRow(count: overflow) { showAllOptions = true }
+            if AskOptionLayout.needsFullList(options) {
+                MoreOptionsRow(count: AskOptionLayout.overflowCount(total: options.count)) {
+                    showAllOptions = true
+                }
             }
         }
     }
@@ -297,6 +298,11 @@ struct AskDetailView: View {
                     ReplyOptionRow(index: index, text: option, isRecommended: index == 0) {
                         answer(card, optionIdx: index)
                     }
+                }
+                // Three options or fewer never overflow, but one of them can
+                // still be too long for two lines.
+                if AskOptionLayout.hasUnreadableOption(options) {
+                    MoreOptionsRow(count: 0) { showAllOptions = true }
                 }
             }
 

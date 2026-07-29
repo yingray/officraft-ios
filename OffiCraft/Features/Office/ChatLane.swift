@@ -43,6 +43,47 @@ enum ChatLane: String, Hashable {
     var isFolded: Bool { self != .direct }
 }
 
+/// The routing of one chat row, with no dependency on the model type — enough
+/// to decide a lane and a peer, and nothing else.
+struct ChatRouting: Equatable {
+    let from: String
+    let to: String
+    let ts: Double
+}
+
+extension ChatLane {
+    /// The newest owner↔peer message time, per peer.
+    ///
+    /// Only `.direct` rows count. Two agents talking to each other is not the
+    /// owner's conversation and must not float a row to the top of the office
+    /// list — the same reason those rows fold away inside the thread. System
+    /// handover notices are excluded too: they are addressed to the member, not
+    /// to the owner, so nobody left the owner a message.
+    ///
+    /// The owner's own outgoing messages do count. A thread you just wrote in
+    /// belongs at the top, which is how every messaging list behaves.
+    static func directRecency(_ rows: [ChatRouting], ownerId: String) -> [String: Double] {
+        var newest: [String: Double] = [:]
+        for row in rows where classify(from: row.from, to: row.to, ownerId: ownerId) == .direct {
+            guard let peer = peer(of: row, ownerId: ownerId) else { continue }
+            if let existing = newest[peer], existing >= row.ts { continue }
+            newest[peer] = row.ts
+        }
+        return newest
+    }
+
+    /// Whichever end of a direct row is not the owner.
+    private static func peer(of row: ChatRouting, ownerId: String) -> String? {
+        let fromIsOwner = row.from == ownerId || row.from == defaultOwnerId
+        let toIsOwner = row.to == ownerId || row.to == defaultOwnerId
+        // Owner talking to themselves names no peer.
+        if fromIsOwner && toIsOwner { return nil }
+        if fromIsOwner { return row.to.isEmpty ? nil : row.to }
+        if toIsOwner { return row.from.isEmpty ? nil : row.from }
+        return nil
+    }
+}
+
 /// A stretch of consecutive rows in the same lane.
 ///
 /// Runs are what the transcript renders: a `.direct` run is a plain stretch of

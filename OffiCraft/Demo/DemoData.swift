@@ -371,6 +371,13 @@ enum DemoData {
         }
     }
 
+    /// Every peer's thread at once — the demo stand-in for the server's whole
+    /// chat stream, which is what the office list derives its ordering from.
+    static var allChat: [ChatMessage] {
+        let peers = members.map(\.id) + outsourceWorkers.map(\.id)
+        return peers.flatMap { chat(with: $0) }
+    }
+
     static let kyleThread: [ChatMessage] = [
         ChatMessage(id: "msg-kyle-1", from: ownerId, to: "m-kyle",
                     body: "先量現況再決定，把數據貼在卡上", ts: hoursAgo(1.2)),

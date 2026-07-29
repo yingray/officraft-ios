@@ -171,6 +171,14 @@ extension APIClient {
         return try await get("/api/chat", query: query)
     }
 
+    /// The tail of the whole chat stream, every peer mixed together.
+    ///
+    /// The roster carries no "last message" timestamp — there is no such field
+    /// on the wire — so the office list derives recency from this instead.
+    func recentChat(limit: Int = 200) async throws -> [ChatMessage] {
+        try await get("/api/chat", query: ["limit": String(limit)])
+    }
+
     struct ChatSendRequest: Encodable {
         let to: String
         let body: String

@@ -444,6 +444,22 @@ struct CountBadge: View {
     }
 }
 
+/// The unread mark on an office row.
+///
+/// A plain dot rather than a count: on this list the question is "does someone
+/// want me?", not "how many times did they say it", and the dot leaves room for
+/// the 喚醒 button that a count badge used to displace.
+struct UnreadDot: View {
+    var size: CGFloat = 10
+
+    var body: some View {
+        Circle()
+            .fill(OC.badge)
+            .frame(width: size, height: size)
+            .accessibilityLabel("有未讀訊息")
+    }
+}
+
 // MARK: - Empty state
 
 struct EmptyStateView: View {

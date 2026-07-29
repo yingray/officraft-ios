@@ -526,6 +526,63 @@ check("break plus lane change",
               ChatLaneRun(lane: .system, start: 2, count: 1),
               ChatLaneRun(lane: .system, start: 3, count: 1)])
 
+// MARK: - Office ordering
+
+print("\noffice chat recency")
+
+// Only owner↔peer rows count. Kyle talking to Sasha must not float Kyle — or
+// Sasha — to the top of the office list.
+let routed = [
+    ChatRouting(from: "owner", to: "m-kyle", ts: 100),
+    ChatRouting(from: "m-kyle", to: "owner", ts: 300),
+    ChatRouting(from: "m-kyle", to: "m-sasha", ts: 900),   // inter-agent, ignored
+    ChatRouting(from: "m-sasha", to: "m-kyle", ts: 950),   // inter-agent, ignored
+    ChatRouting(from: "system", to: "m-kyle", ts: 999),    // handover, ignored
+    ChatRouting(from: "ow-7", to: "owner", ts: 200),
+]
+let recency = ChatLane.directRecency(routed, ownerId: "owner")
+check("kyle keeps his own newest direct message", recency["m-kyle"] == 300,
+      "got \(String(describing: recency["m-kyle"]))")
+check("outsource peer recorded", recency["ow-7"] == 200)
+check("inter-agent does not create a peer entry", recency["m-sasha"] == nil)
+check("system handover does not bump the peer", recency["m-kyle"] != 999)
+check("owner is never its own peer", recency["owner"] == nil)
+check("only two peers seen", recency.count == 2, "got \(recency.count)")
+
+// The owner's own outgoing message counts — a thread you just wrote in belongs
+// at the top.
+let ownOnly = ChatLane.directRecency(
+    [ChatRouting(from: "owner", to: "m-mira", ts: 42)], ownerId: "owner")
+check("an outgoing message alone ranks the peer", ownOnly["m-mira"] == 42)
+
+// Newest wins regardless of the order rows arrive in.
+let outOfOrder = ChatLane.directRecency([
+    ChatRouting(from: "m-kyle", to: "owner", ts: 500),
+    ChatRouting(from: "owner", to: "m-kyle", ts: 100),
+], ownerId: "owner")
+check("newest wins whatever the order", outOfOrder["m-kyle"] == 500)
+
+// A custom owner id still resolves the peer correctly.
+let custom = ChatLane.directRecency(
+    [ChatRouting(from: "seth", to: "m-kyle", ts: 7)], ownerId: "seth")
+check("custom owner id names the peer", custom["m-kyle"] == 7)
+
+// MARK: - Long options
+
+print("\nlong option handling")
+
+let shortOptions = ["先加分頁，預設 50 筆", "維持全量"]
+let longOptions = ["先加分頁，預設 50 筆", String(repeating: "很長的選項描述", count: 8)]
+
+check("short options need no full list", !AskOptionLayout.hasUnreadableOption(shortOptions))
+check("a long option needs the full list", AskOptionLayout.hasUnreadableOption(longOptions))
+check("two short options need no door", !AskOptionLayout.needsFullList(shortOptions))
+check("two options, one long, need a door", AskOptionLayout.needsFullList(longOptions))
+// The overflow door still opens for a big set of short options.
+check("seven short options need a door",
+      AskOptionLayout.needsFullList(Array(repeating: "短", count: 7)))
+check("no options need no door", !AskOptionLayout.needsFullList([]))
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

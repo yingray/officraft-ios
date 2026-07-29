@@ -13,16 +13,18 @@ struct OfficeView: View {
     private enum Tab: Hashable { case members, outsource }
 
     private var filteredMembers: [Member] {
-        guard !search.isEmpty else { return store.activeMembers }
-        return store.activeMembers.filter {
+        let all = store.membersByChatRecency
+        guard !search.isEmpty else { return all }
+        return all.filter {
             $0.name.localizedCaseInsensitiveContains(search)
                 || $0.roleName.localizedCaseInsensitiveContains(search)
         }
     }
 
     private var filteredWorkers: [OutsourceWorker] {
-        guard !search.isEmpty else { return store.outsourceWorkers }
-        return store.outsourceWorkers.filter {
+        let all = store.workersByChatRecency
+        guard !search.isEmpty else { return all }
+        return all.filter {
             $0.codename.localizedCaseInsensitiveContains(search)
                 || ($0.taskTitle ?? "").localizedCaseInsensitiveContains(search)
         }
@@ -181,9 +183,12 @@ private struct MemberRow: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
 
+            // Dot and 喚醒 are siblings now. They used to be an if/else, so an
+            // offline member with unread had no way to be woken from here.
             if member.unreadCount > 0 {
-                CountBadge(count: member.unreadCount)
-            } else if !member.presence.isAwake {
+                UnreadDot()
+            }
+            if !member.presence.isAwake {
                 Button(action: onWake) {
                     Text("喚醒")
                         .font(.system(size: 13, weight: .semibold))
@@ -257,7 +262,7 @@ private struct OutsourceRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if worker.unreadCount > 0 {
-                CountBadge(count: worker.unreadCount)
+                UnreadDot()
             }
         }
         .padding(.horizontal, 14)

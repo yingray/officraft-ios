@@ -198,7 +198,10 @@ struct ChatView: View {
             // that reads `messages` at that moment sees an empty array — which
             // is why arriving from a reply card used to land at the bottom
             // instead of on the message it named.
-            .onChange(of: messages.count, initial: true) {
+            // Keyed on the last row rather than the message count: a refetch
+            // that replaces the tail without changing its length has to move
+            // the view too, and the count would not notice.
+            .onChange(of: bottomAnchorId, initial: true) {
                 guard !messages.isEmpty else { return }
                 settle(proxy)
             }
@@ -212,14 +215,41 @@ struct ChatView: View {
             didAnchor = true
             expandRun(containing: highlightMessageId)
             // The fold has to be open before the target exists to scroll to.
-            DispatchQueue.main.async {
-                proxy.scrollTo(highlightMessageId, anchor: .center)
-            }
+            scrollAgainAfterLayout(proxy, to: highlightMessageId, anchor: .center)
             return
         }
+
+        let isArrival = !didAnchor
         didAnchor = true
         guard let anchor = bottomAnchorId else { return }
-        withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
+
+        if isArrival {
+            // No animation on arrival: the thread should already be at the
+            // bottom when it appears, not scroll there in front of the reader.
+            proxy.scrollTo(anchor, anchor: .bottom)
+            scrollAgainAfterLayout(proxy, to: anchor, anchor: .bottom)
+        } else {
+            withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
+            scrollAgainAfterLayout(proxy, to: anchor, anchor: .bottom)
+        }
+    }
+
+    /// Scrolls again once layout has caught up.
+    ///
+    /// One `scrollTo` is not enough here and this is not paranoia: the
+    /// transcript is a `LazyVStack`, so the rows below the fold do not exist
+    /// yet when the first call runs, and a markdown body — a table, a code
+    /// block, an image thumbnail that has not loaded — settles its final height
+    /// after the first layout pass. Both move the real bottom out from under
+    /// the scroll that just happened, which is what "sometimes it does not go
+    /// to the bottom" looks like.
+    private func scrollAgainAfterLayout(_ proxy: ScrollViewProxy,
+                                        to id: String,
+                                        anchor: UnitPoint) {
+        DispatchQueue.main.async { proxy.scrollTo(id, anchor: anchor) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            proxy.scrollTo(id, anchor: anchor)
+        }
     }
 
     /// The id to scroll to for "the bottom". A collapsed run hides its messages,

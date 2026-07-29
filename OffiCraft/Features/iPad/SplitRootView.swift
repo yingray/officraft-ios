@@ -380,7 +380,7 @@ private struct OfficeListColumn: View {
 
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(store.activeMembers) { member in
+                    ForEach(store.membersByChatRecency) { member in
                         peerRow(id: member.id, name: member.name,
                                 subtitle: member.roleName, presence: member.presence,
                                 unread: member.unreadCount)
@@ -392,7 +392,7 @@ private struct OfficeListColumn: View {
                             .padding(.top, 10)
                             .padding(.leading, 4)
                     }
-                    ForEach(store.outsourceWorkers) { worker in
+                    ForEach(store.workersByChatRecency) { worker in
                         peerRow(id: worker.id, name: worker.codename,
                                 subtitle: worker.taskTitle ?? "待命",
                                 presence: worker.presence, unread: worker.unreadCount)
@@ -426,7 +426,7 @@ private struct OfficeListColumn: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if unread > 0 { CountBadge(count: unread) }
+                if unread > 0 { UnreadDot(size: 9) }
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
