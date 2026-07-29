@@ -2,12 +2,15 @@ import SwiftUI
 
 /// A message body that starts clipped when it is very long, with 展開 to open it.
 ///
-/// The measurement is the point. The content keeps its natural height — that is
-/// what `fixedSize` is doing here, and why the `GeometryReader` sits in the
-/// background *before* the cap is applied — and the cap only clips what is
-/// already laid out. Because the child ignores the height the cap proposes, the
-/// measured value never depends on the cap, so folding cannot feed back into
-/// the measurement and start a layout loop.
+/// Two heights, in order: a rough estimate from the text decides the first
+/// frame, and the measured height takes over once the row has been laid out.
+///
+/// The measurement is what makes the fade honest. The content keeps its natural
+/// height — that is what `fixedSize` is doing here, and why the `GeometryReader`
+/// sits in the background *before* the cap is applied — and the cap only clips
+/// what is already laid out. Because the child ignores the height the cap
+/// proposes, the measured value never depends on the cap, so folding cannot
+/// feed back into the measurement and start a layout loop.
 ///
 /// The cut edge is faded with a mask rather than a gradient painted over it: a
 /// mask fades the content itself, so this works on any bubble fill and no
