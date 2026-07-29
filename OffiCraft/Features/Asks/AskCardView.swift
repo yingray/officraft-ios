@@ -9,7 +9,9 @@ struct AskCardView: View {
     var onOpenDetail: () -> Void
     var onWriteOwn: () -> Void
     var onOpenTask: ((TaskRef) -> Void)?
-    var onOpenAttachment: ((Attachment) -> Void)?
+    /// Required, not optional: an optional handler meant a caller could ship a
+    /// strip of tappable-looking chips that silently did nothing.
+    var onOpenAttachment: (Attachment) -> Void
 
     @Environment(StudioStore.self) private var store
 
@@ -30,9 +32,7 @@ struct AskCardView: View {
             }
 
             if let attachments = card.attachments, !attachments.isEmpty {
-                AttachmentStrip(attachments: attachments) { attachment in
-                    onOpenAttachment?(attachment)
-                }
+                AttachmentStrip(attachments: attachments, onOpen: onOpenAttachment)
             }
 
             if card.task != nil {
@@ -177,6 +177,7 @@ struct AskCardView: View {
 struct HandledAskCardView: View {
     let card: ReplyCard
     var onOpenDetail: () -> Void
+    var onOpenAttachment: (Attachment) -> Void
 
     @Environment(StudioStore.self) private var store
 
@@ -214,6 +215,14 @@ struct HandledAskCardView: View {
                 .foregroundStyle(OC.label)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Answered and expired cards keep their attachments — the decision
+            // is often only readable next to what it was made from.
+            if let attachments = card.attachments, !attachments.isEmpty {
+                AttachmentStrip(attachments: attachments,
+                                compact: true,
+                                onOpen: onOpenAttachment)
+            }
 
             if card.status == .answered {
                 answeredBox

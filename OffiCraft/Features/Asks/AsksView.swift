@@ -12,6 +12,7 @@ struct AsksView: View {
     @State private var expireCandidate: ReplyCard?
     @State private var openTask: TaskRoute?
     @State private var preview: PreviewTarget?
+    @State private var previewAuthorId: String?
 
     private enum Tab: Hashable { case waiting, handled }
 
@@ -55,30 +56,9 @@ struct AsksView: View {
         .navigationDestination(item: $openTask) { route in
             TaskDetailView(taskId: route.id)
         }
-        .sheet(item: $writeOwnFor) { card in
-            WriteOwnAnswerSheet(card: card)
-        }
-        .attachmentPreview($preview,
-                           author: openCardAuthor,
-                           timestamp: nil)
-        .confirmationDialog(
-            "把這張請示標為過期？",
-            isPresented: Binding(
-                get: { expireCandidate != nil },
-                set: { if !$0 { expireCandidate = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("標為過期", role: .destructive) {
-                if let card = expireCandidate {
-                    Task { await store.expire(card: card) }
-                }
-                expireCandidate = nil
-            }
-            Button("取消", role: .cancel) { expireCandidate = nil }
-        } message: {
-            Text("過期不算回答，成員會視情況重開一張新的。")
-        }
+        // The preview presenter is the only sheet-class modifier on the root;
+        // the compose sheet and the expire dialog ride on the list instead.
+        .attachmentPreview($preview, author: previewAuthor, timestamp: nil)
         .refreshable { await store.refreshReplyCards() }
     }
 
@@ -86,9 +66,10 @@ struct AsksView: View {
         session.isDemo ? DemoData.studioName.uppercased() : "OFFICRAFT"
     }
 
-    private var openCardAuthor: String {
-        guard let card = openCard else { return "" }
-        return store.displayName(for: card.from)
+    /// Whoever authored the attachment currently being previewed.
+    private var previewAuthor: String {
+        guard let from = previewAuthorId else { return "" }
+        return store.displayName(for: from)
     }
 
     // MARK: List
@@ -121,6 +102,27 @@ struct AsksView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 0)
+            .sheet(item: $writeOwnFor) { card in
+                WriteOwnAnswerSheet(card: card)
+            }
+            .confirmationDialog(
+                "把這張請示標為過期？",
+                isPresented: Binding(
+                    get: { expireCandidate != nil },
+                    set: { if !$0 { expireCandidate = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("標為過期", role: .destructive) {
+                    if let card = expireCandidate {
+                        Task { await store.expire(card: card) }
+                    }
+                    expireCandidate = nil
+                }
+                Button("取消", role: .cancel) { expireCandidate = nil }
+            } message: {
+                Text("過期不算回答，成員會視情況重開一張新的。")
+            }
         }
     }
 
@@ -136,6 +138,7 @@ struct AsksView: View {
                 onWriteOwn: { writeOwnFor = card },
                 onOpenTask: { openTask = TaskRoute($0) },
                 onOpenAttachment: { attachment in
+                    previewAuthorId = card.from
                     preview = previewTarget(for: attachment, in: card.attachments ?? [])
                 }
             )
@@ -158,7 +161,14 @@ struct AsksView: View {
                 .tint(OC.waiting)
             }
         } else {
-            HandledAskCardView(card: card) { openCard = card }
+            HandledAskCardView(
+                card: card,
+                onOpenDetail: { openCard = card },
+                onOpenAttachment: { attachment in
+                    previewAuthorId = card.from
+                    preview = previewTarget(for: attachment, in: card.attachments ?? [])
+                }
+            )
         }
     }
 }

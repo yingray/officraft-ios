@@ -28,6 +28,12 @@ extension Array {
 }
 
 /// Routes a `PreviewTarget` to the right presentation.
+///
+/// Deliberately only TWO presentation modifiers: one full-screen cover for the
+/// lightbox and one sheet that branches between markdown and Quick Look.
+/// Stacking a third sheet on the same view is what made these previews
+/// unreliable — SwiftUI is fussy about several sheet-class modifiers competing
+/// on one node, especially alongside a photo picker or a file importer.
 struct AttachmentPreviewPresenter: ViewModifier {
     @Binding var target: PreviewTarget?
     /// Author + timestamp shown in the preview chrome.
@@ -45,16 +51,18 @@ struct AttachmentPreviewPresenter: ViewModifier {
                     timestamp: timestamp
                 )
             }
-            .sheet(item: bindingForMarkdown) { attachment in
-                MarkdownPreviewView(
-                    attachment: attachment,
-                    author: author,
-                    timestamp: timestamp,
-                    taskNo: taskNo
-                )
-            }
-            .sheet(item: bindingForFile) { attachment in
-                QuickLookView(attachment: attachment)
+            .sheet(item: bindingForSheet) { payload in
+                switch payload.kind {
+                case .markdown:
+                    MarkdownPreviewView(
+                        attachment: payload.attachment,
+                        author: author,
+                        timestamp: timestamp,
+                        taskNo: taskNo
+                    )
+                case .file:
+                    QuickLookView(attachment: payload.attachment)
+                }
             }
     }
 
@@ -62,6 +70,13 @@ struct AttachmentPreviewPresenter: ViewModifier {
         let attachments: [Attachment]
         let index: Int
         var id: String { attachments[safe: index]?.id ?? "0" }
+    }
+
+    private struct SheetPayload: Identifiable {
+        enum Kind { case markdown, file }
+        let attachment: Attachment
+        let kind: Kind
+        var id: String { "\(kind)-\(attachment.id)" }
     }
 
     private var bindingForImage: Binding<ImagePayload?> {
@@ -76,16 +91,18 @@ struct AttachmentPreviewPresenter: ViewModifier {
         )
     }
 
-    private var bindingForMarkdown: Binding<Attachment?> {
+    private var bindingForSheet: Binding<SheetPayload?> {
         Binding(
-            get: { if case .markdown(let attachment) = target { return attachment }; return nil },
-            set: { if $0 == nil { target = nil } }
-        )
-    }
-
-    private var bindingForFile: Binding<Attachment?> {
-        Binding(
-            get: { if case .file(let attachment) = target { return attachment }; return nil },
+            get: {
+                switch target {
+                case .markdown(let attachment):
+                    return SheetPayload(attachment: attachment, kind: .markdown)
+                case .file(let attachment):
+                    return SheetPayload(attachment: attachment, kind: .file)
+                default:
+                    return nil
+                }
+            },
             set: { if $0 == nil { target = nil } }
         )
     }

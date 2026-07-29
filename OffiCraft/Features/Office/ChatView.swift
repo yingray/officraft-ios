@@ -37,18 +37,10 @@ struct ChatView: View {
         .navigationDestination(item: $openCard) { route in
             AskDetailView(cardId: route.id)
         }
+        // Only the preview presenter lives on the screen root. The picker and
+        // its alert hang off the composer, which owns them anyway — several
+        // sheet-class modifiers on one node fight each other.
         .attachmentPreview($preview, author: previewAuthor, timestamp: previewTimestamp)
-        .attachmentPicker(attachments: $pending,
-                          isPresentingPhotos: $isPickingPhotos,
-                          isPresentingFiles: $isPickingFiles,
-                          errorMessage: $attachmentError)
-        .alert("附件加不進來",
-               isPresented: Binding(get: { attachmentError != nil },
-                                    set: { if !$0 { attachmentError = nil } })) {
-            Button("好") { attachmentError = nil }
-        } message: {
-            Text(attachmentError ?? "")
-        }
         .task {
             store.activeThreadPeer = peerId
             await store.loadThread(with: peerId)
@@ -186,7 +178,26 @@ struct ChatView: View {
                 )
             }
 
-            Composer(
+            composerBar
+        }
+        .padding(.horizontal, OCMetrics.screenPadding)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .attachmentPicker(attachments: $pending,
+                          isPresentingPhotos: $isPickingPhotos,
+                          isPresentingFiles: $isPickingFiles,
+                          errorMessage: $attachmentError)
+        .alert("附件加不進來",
+               isPresented: Binding(get: { attachmentError != nil },
+                                    set: { if !$0 { attachmentError = nil } })) {
+            Button("好") { attachmentError = nil }
+        } message: {
+            Text(attachmentError ?? "")
+        }
+    }
+
+    private var composerBar: some View {
+        Composer(
                 text: $draft,
                 placeholder: "訊息…",
                 accentSend: true,
@@ -203,10 +214,6 @@ struct ChatView: View {
                 markdownPreview = false
                 Task { await store.send(body, to: peerId, attachments: files) }
             }
-        }
-        .padding(.horizontal, OCMetrics.screenPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
     }
 }
 
@@ -250,21 +257,30 @@ private struct MessageRow: View {
     @ViewBuilder
     private var content: some View {
         if isOwn {
-            Text(message.body)
-                .font(.ocCallout)
-                .foregroundStyle(OC.bubbleOwnText)
-                .lineSpacing(4)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 20, bottomLeadingRadius: 20,
-                        bottomTrailingRadius: 6, topTrailingRadius: 20,
-                        style: .continuous
-                    )
-                    .fill(OC.bubbleOwn)
-                )
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .trailing, spacing: 8) {
+                if !message.body.isEmpty {
+                    Text(message.body)
+                        .font(.ocCallout)
+                        .foregroundStyle(OC.bubbleOwnText)
+                        .lineSpacing(4)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(
+                            UnevenRoundedRectangle(
+                                topLeadingRadius: 20, bottomLeadingRadius: 20,
+                                bottomTrailingRadius: 6, topTrailingRadius: 20,
+                                style: .continuous
+                            )
+                            .fill(OC.bubbleOwn)
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // What the owner sent is previewable too — it used to render
+                // as text only, so their own files were invisible.
+                if let attachments = message.attachments, !attachments.isEmpty {
+                    AttachmentStrip(attachments: attachments, onOpen: onOpenAttachment)
+                }
+            }
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 if isCardAnnouncement {
