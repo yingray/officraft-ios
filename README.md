@@ -33,6 +33,50 @@ The markdown parser, SVG path parser and duration formatting do not touch
 UIKit, so they compile and run against the macOS SDK — no Xcode, no simulator.
 Fast enough to run on every change.
 
+### Simulator
+
+The iOS platform downloads separately from Xcode. A fresh install has no
+runtime — `xcrun simctl list runtimes` comes back empty and any build fails
+with "iOS is not installed", even though `xcodebuild -showsdks` lists the SDK:
+
+```bash
+xcodebuild -downloadPlatform iOS
+```
+
+If Xcode is installed but `xcode-select` still points at the Command Line
+Tools, aim each command at it instead of switching the whole machine over —
+that needs a password, this does not:
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+Then build, install, launch, look:
+
+```bash
+xcodebuild build -project OffiCraft.xcodeproj -scheme OffiCraft \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO
+xcrun simctl install "iPhone 17 Pro" \
+  build/DerivedData/Build/Products/Debug-iphonesimulator/OffiCraft.app
+xcrun simctl launch "iPhone 17 Pro" link.hardcore.officraft
+xcrun simctl io "iPhone 17 Pro" screenshot shot.png
+```
+
+Two things that waste an afternoon:
+
+- Piping `xcodebuild` into `tail` hands you `tail`'s exit code, so a failed
+  build reads as a pass. `set -o pipefail` first.
+- `simctl` installs, launches and screenshots, but it cannot tap. To photograph
+  a screen several taps in, add a launch argument that branches the root view
+  straight to it, take the shot, then take the branch back out. Driving the
+  Simulator through Accessibility instead needs a permission the terminal is
+  unlikely to have, and the prompt blocks until someone answers it.
+
+App data survives a rebuild — Keychain and `UserDefaults` both live in the
+device's container, so a signed-in session carries across installs. Only
+`Erase All Content and Settings` clears it.
+
 ### Unsigned .ipa
 
 ```bash

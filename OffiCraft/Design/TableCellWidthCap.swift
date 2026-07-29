@@ -13,6 +13,15 @@ import SwiftUI
 /// this table used to truncate. Apple's guidance is the opposite: "avoid
 /// truncating text in scrollable regions unless people can open a separate view
 /// to read the rest of the content."
+///
+/// One precondition, and it is load-bearing: the grid must be free to take its
+/// natural size. Offer `Grid` less than it asks for and it compresses — narrower
+/// columns than were measured, or height taken out of the most flexible row —
+/// and the height reported here stops matching what is drawn, so content spills
+/// out of its row and is clipped. It surfaces as the last row cut off when the
+/// squeeze is horizontal, and as the header text escaping its tint when it is
+/// vertical. `TableBlock` pins the grid with `fixedSize()` for exactly this
+/// reason; remove that and this type is quietly wrong again.
 struct TableCellWidthCap: Layout {
     /// Narrow columns still need to hold a word. 96pt is roughly the floor at
     /// which a Chinese or English label stays readable at 12.5pt.
