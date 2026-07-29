@@ -397,6 +397,53 @@ check("negative clamps", OCFormat.duration(-100) == "剛剛", OCFormat.duration(
 check("percent", OCFormat.percent(0.856) == "86%", OCFormat.percent(0.856))
 check("percent nil", OCFormat.percent(nil) == "—", OCFormat.percent(nil))
 
+// MARK: - Many-options rules
+
+print("\nreply-card option layout")
+
+// 1–3: everything inline, no 讀全文 row, a summary that can breathe.
+for count in 1...3 {
+    check("\(count) options all inline", AskOptionLayout.inlineCount(total: count) == count,
+          "got \(AskOptionLayout.inlineCount(total: count))")
+    check("\(count) options no overflow", AskOptionLayout.overflowCount(total: count) == 0,
+          "got \(AskOptionLayout.overflowCount(total: count))")
+    check("\(count) options no 讀全文", !AskOptionLayout.showsReadFullText(total: count))
+    check("\(count) options summary 5 lines", AskOptionLayout.summaryLineLimit(total: count) == 5,
+          "got \(AskOptionLayout.summaryLineLimit(total: count))")
+}
+
+// 4–6: still all inline, but the summary gives up its lines to make room.
+for count in 4...6 {
+    check("\(count) options all inline", AskOptionLayout.inlineCount(total: count) == count,
+          "got \(AskOptionLayout.inlineCount(total: count))")
+    check("\(count) options no overflow", AskOptionLayout.overflowCount(total: count) == 0)
+    check("\(count) options show 讀全文", AskOptionLayout.showsReadFullText(total: count))
+    check("\(count) options summary 3 lines", AskOptionLayout.summaryLineLimit(total: count) == 3,
+          "got \(AskOptionLayout.summaryLineLimit(total: count))")
+}
+
+// 7+: first five inline, the rest folded away.
+check("7 options → 5 inline", AskOptionLayout.inlineCount(total: 7) == 5,
+      "got \(AskOptionLayout.inlineCount(total: 7))")
+check("7 options → 2 folded", AskOptionLayout.overflowCount(total: 7) == 2,
+      "got \(AskOptionLayout.overflowCount(total: 7))")
+check("12 options → 7 folded", AskOptionLayout.overflowCount(total: 12) == 7,
+      "got \(AskOptionLayout.overflowCount(total: 12))")
+
+// Inline + folded always accounts for every option — nothing may go missing.
+for count in 0...20 {
+    let covered = AskOptionLayout.inlineCount(total: count) + AskOptionLayout.overflowCount(total: count)
+    check("\(count) options fully accounted", covered == count, "covered \(covered)")
+}
+
+// The last rule fires at ten, not before.
+check("9 options no nudge", !AskOptionLayout.suggestsFewerOptions(total: 9))
+check("10 options nudge", AskOptionLayout.suggestsFewerOptions(total: 10))
+
+// A card with no options must not ask for a fold.
+check("0 options inline 0", AskOptionLayout.inlineCount(total: 0) == 0)
+check("0 options no overflow", AskOptionLayout.overflowCount(total: 0) == 0)
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

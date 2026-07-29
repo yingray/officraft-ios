@@ -141,10 +141,47 @@ final class StudioStore {
                 ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
             }
             cardCounts = try await counts
+            await hydrateWaitingCards()
         } catch {
             note(error)
         }
     }
+
+    /// Pull the body and options onto the waiting cards.
+    ///
+    /// `GET /api/reply-cards` returns a deliberately light row — the server's
+    /// own note says the list carries no body and no options, they are one
+    /// `get_reply_card` away. But the whole design rests on the inbox card being
+    /// the decision surface ("選項就在卡上，零跳轉"), so the app has to fetch
+    /// them. Only the cards actually waiting on the owner, capped, and
+    /// best-effort: a card that fails to hydrate still shows its question and
+    /// still opens.
+    private func hydrateWaitingCards() async {
+        let pending = waitingCards.prefix(hydrationLimit).filter { !$0.isDetailed }
+        guard !pending.isEmpty else { return }
+
+        let api = session.api
+        let details = await withTaskGroup(of: ReplyCard?.self,
+                                          returning: [String: ReplyCard].self) { group in
+            for card in pending {
+                let id = card.id
+                group.addTask { try? await api.replyCard(id: id) }
+            }
+            var collected: [String: ReplyCard] = [:]
+            for await detail in group {
+                if let detail { collected[detail.id] = detail }
+            }
+            return collected
+        }
+        guard !details.isEmpty else { return }
+
+        for (id, detail) in details { cardDetails[id] = detail }
+        waitingCards = waitingCards.map { details[$0.id] ?? $0 }
+    }
+
+    /// Enough to cover an inbox a person could actually work through. Past this
+    /// the owner is not deciding card by card anyway.
+    private let hydrationLimit = 12
 
     /// The list endpoint omits `body`/`options`, so the single-card screen
     /// fetches the full card once and caches it.

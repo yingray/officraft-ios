@@ -2,19 +2,27 @@ import SwiftUI
 
 /// One tappable answer on a reply card.
 ///
-/// The doc's rule: options are at least 44pt and live on the card itself, so a
-/// decision never costs a navigation. Option 0 is the asker's recommendation —
-/// the server sends options in preference order — and carries the AI 建議 chip.
+/// The doc's rule: options live on the card itself, so a decision never costs a
+/// navigation. Option 0 is the asker's recommendation — the server sends
+/// options in preference order — and carries the AI 建議 chip.
+///
+/// Every row is a single line at 48pt and truncates. That is deliberate: the
+/// "Many options" rules promise all the options are visible without scrolling,
+/// which only holds if a row's height cannot grow with its wording. The long
+/// version of an option lives in the body, one 讀全文 tap away.
 struct ReplyOptionRow: View {
     let index: Int
     let text: String
     var isRecommended: Bool
     /// Set once the owner has answered, to show which one they picked.
     var isChosen: Bool = false
+    /// Tighter horizontal padding for the inbox card and the task-gate card.
+    /// Height and line count stay put — those are fixed by the rules above.
     var isCompact: Bool = false
     var action: (() -> Void)?
 
     private var highlighted: Bool { isRecommended || isChosen }
+    private var radius: CGFloat { isCompact ? OCMetrics.optionRadius : 14 }
 
     var body: some View {
         Button {
@@ -23,10 +31,10 @@ struct ReplyOptionRow: View {
             HStack(spacing: 10) {
                 numberBadge
                 Text(text)
-                    .font(isCompact ? .ocOption : .ocBodyEmphasised)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(highlighted ? OC.accent : OC.labelBody)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if isChosen {
                     SolidChip(text: "你選的", tint: OC.label, background: OC.bubbleOwn)
@@ -36,13 +44,12 @@ struct ReplyOptionRow: View {
                 }
             }
             .padding(.horizontal, isCompact ? 12 : 14)
-            .padding(.vertical, isCompact ? 12 : 14)
-            .frame(minHeight: OCMetrics.minTapTarget)
+            .frame(minHeight: OCMetrics.optionHeight)
             .background(
-                RoundedRectangle(cornerRadius: isCompact ? OCMetrics.optionRadius : 15, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(highlighted ? OC.accentFill : OC.label.opacity(0.04))
                     .overlay(
-                        RoundedRectangle(cornerRadius: isCompact ? OCMetrics.optionRadius : 15, style: .continuous)
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
                             .strokeBorder(highlighted ? OC.accentBorder : OC.hairline, lineWidth: 1)
                     )
             )
@@ -55,11 +62,11 @@ struct ReplyOptionRow: View {
 
     private var numberBadge: some View {
         Text("\(index + 1)")
-            .font(.system(size: isCompact ? 11 : 12, weight: .bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundStyle(highlighted ? OC.accent : OC.labelTertiary)
-            .frame(width: isCompact ? 22 : 24, height: isCompact ? 22 : 24)
+            .frame(width: 22, height: 22)
             .background(
-                RoundedRectangle(cornerRadius: isCompact ? 7 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(
                         highlighted ? OC.accentBorder : OC.labelQuaternary.opacity(0.5),
                         lineWidth: 1.5

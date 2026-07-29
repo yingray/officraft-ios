@@ -68,6 +68,9 @@ enum OCMetrics {
     static let groupRadius: CGFloat = 16
     /// Inline option / chip radius.
     static let optionRadius: CGFloat = 13
+    /// Reply-card option row — fixed by the "Many options" rules so a long
+    /// wording cannot push the later options off screen.
+    static let optionHeight: CGFloat = 48
     /// Compact card radius (iPad middle column).
     static let compactCardRadius: CGFloat = 14
 }

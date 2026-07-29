@@ -22,6 +22,7 @@ swiftc -O \
   "$ROOT/OffiCraft/Design/Formatters.swift" \
   "$ROOT/OffiCraft/Models/UsageWindow.swift" \
   "$ROOT/OffiCraft/Models/StudioSettings.swift" \
+  "$ROOT/OffiCraft/Features/Asks/AskOptionLayout.swift" \
   -o "$OUT/logic-tests"
 
 "$OUT/logic-tests"

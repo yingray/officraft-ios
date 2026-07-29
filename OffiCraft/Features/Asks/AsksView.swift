@@ -13,6 +13,7 @@ struct AsksView: View {
     @State private var openTask: TaskRoute?
     @State private var preview: PreviewTarget?
     @State private var previewAuthorId: String?
+    @State private var allOptionsFor: ReplyCard?
 
     private enum Tab: Hashable { case waiting, handled }
 
@@ -63,6 +64,11 @@ struct AsksView: View {
         // inbox — taking an open sheet with it.
         .sheet(item: $writeOwnFor) { card in
             WriteOwnAnswerSheet(card: card)
+        }
+        .fullScreenCover(item: $allOptionsFor) { card in
+            AskOptionsFullScreenView(card: card) { index in
+                Task { await store.answer(card: card, optionIdx: index, text: nil) }
+            }
         }
         .confirmationDialog(
             "把這張請示標為過期？",
@@ -142,7 +148,8 @@ struct AsksView: View {
                 onOpenAttachment: { attachment in
                     previewAuthorId = card.from
                     preview = previewTarget(for: attachment, in: card.attachments ?? [])
-                }
+                },
+                onShowAllOptions: { allOptionsFor = card }
             )
             // Interaction rules: left swipe marks expired (confirmed), right
             // swipe jumps to the original message.

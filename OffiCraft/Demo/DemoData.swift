@@ -115,18 +115,39 @@ enum DemoData {
         ),
         ReplyCard(
             id: "rc-2", from: "ow-7", kind: "decision", status: .waiting,
-            summary: "上線視窗要選週三凌晨還是週五下班後？",
+            summary: "上線視窗要排哪一段？",
             body: rolloutQuestion,
-            options: ["週三凌晨 02:00", "週五 18:30", "再等一週"],
-            attachments: [accountsShot, rolloutPlan],
+            options: [
+                "週三 02:00–04:00",
+                "週五 19:00–22:00",
+                "週六 09:00–12:00（值班減半）",
+                "下週一 01:00–03:00",
+                "拆兩段：先灰度 10%，隔日全量",
+                "等結算週後再排",
+            ],
+            attachments: [rolloutPlan],
             task: TaskRef(id: "t-91c7", title: "整理七月帳號用量報告", typeKey: "weekly-report"),
             createdTs: minutesAgo(95)
         ),
         ReplyCard(
             id: "rc-3", from: "m-mira", kind: "decision", status: .waiting,
-            summary: "客戶回覆語氣要正式還是輕鬆？",
-            body: "客戶前兩封信都用了表情符號，但合約金額不小。\n\n語氣定調後我會沿用到整串往來。",
-            options: ["正式但不生硬", "維持輕鬆"],
+            summary: "這批雜項這週先動哪一件？",
+            // Ten options on purpose: this is the fixture for the last rule —
+            // the tail folds into 其他 5 個, and the card says out loud that the
+            // list itself is the problem.
+            body: "客戶那邊沒有指定順序，我把積著的都列出來了。\n\n每一件都是半天到一天，動一件其他就要往後。",
+            options: [
+                "補上匯出報表的欄位對齊",
+                "把登入失敗的錯誤訊息講清楚",
+                "客戶名單的搜尋加上模糊比對",
+                "週報樣板換成新的視覺",
+                "把過期通知的文案改軟一點",
+                "附件上傳的大小上限拉到 50MB",
+                "設定頁的說明文字重寫",
+                "清掉舊版的匯入腳本",
+                "把時區顯示統一成台北",
+                "信件簽名檔補上職稱",
+            ],
             createdTs: minutesAgo(12)
         ),
         ReplyCard(
@@ -455,16 +476,20 @@ enum DemoData {
     ```
     """
 
+    /// The doc's "Many options" example, verbatim: six candidate windows, four
+    /// blocks of body, one attachment. It is the fixture that exercises the
+    /// summary + 讀全文 layout.
     static let rolloutQuestion = """
-    兩個視窗各有代價：
+    六個候選窗都已避開客戶尖峰時段（平日 09–18），差別只在值班人力與回滾餘裕。
 
-    - **週三凌晨 02:00** — 影響最小，但出事只有我在線上。
-    - **週五 18:30** — 人都在，但週末沒人盯後續。
+    ### 值班與餘裕
+
+    - 週三凌晨：值班 3 人最足，但隔天上午有客戶 demo
+    - 週五下班後：回滾餘裕最大，出事要加班
+    - 週末場：值班減半，只適合灰度
 
     > [!WARNING]
-    > 這次改動會同時換掉 SSE 的游標對齊，回滾需要重啟 server。
-
-    附上 rollout-plan.md，裡面有逐步驟的回滾點。
+    > 8/2 之後進客戶結算週，任何視窗都要往後推兩週。
     """
 
     static let measureResultMarkdown = """

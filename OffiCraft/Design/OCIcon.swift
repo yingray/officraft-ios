@@ -34,7 +34,9 @@ struct SVGGlyph {
 /// means a change on the web side is a copy-paste away, not a redraw.
 enum OCIcon: String, CaseIterable {
     // Navigation & chrome
-    case chevronRight, chevronLeft, ellipsis, close, search, plus
+    case chevronRight, chevronLeft, chevronDown, ellipsis, close, search, plus
+    /// Stacked lines — the "there is more text behind this" affordance.
+    case lines
     // Tab bar
     case inbox, tasks, office, monitor
     // Content
@@ -53,6 +55,12 @@ enum OCIcon: String, CaseIterable {
 
         case .chevronLeft:
             return SVGGlyph([.path("m15 18-6-6 6-6")])
+
+        case .chevronDown:
+            return SVGGlyph([.path("m6 9 6 6 6-6")])
+
+        case .lines:
+            return SVGGlyph([.path("M4 6h16M4 12h16M4 18h10")])
 
         case .ellipsis:
             return SVGGlyph(paint: .fill, [

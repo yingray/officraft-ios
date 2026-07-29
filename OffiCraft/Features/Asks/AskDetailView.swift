@@ -3,9 +3,12 @@ import UIKit
 
 /// 請示 · 單卡決策 — one card, one decision, full screen.
 ///
-/// Used when the question is long enough that the inbox summary is not enough:
-/// the whole body renders as markdown, and the options stay pinned above the
-/// composer so the decision is always one tap away.
+/// Two layouts, picked by how many options there are. Up to three, the body
+/// renders inline and the options sit pinned above the composer — there is room
+/// for both. From four up, the doc's "Many options" rules take over: the body
+/// collapses to its first paragraph plus a 讀全文 row, and the options move into
+/// the content area so every one of them is visible on arrival. Either way the
+/// owner never has to scroll before they can decide.
 struct AskDetailView: View {
     let cardId: String
 
@@ -17,12 +20,25 @@ struct AskDetailView: View {
     @State private var preview: PreviewTarget?
     @State private var openTask: TaskRoute?
     @State private var openPeer: PeerRoute?
+    @State private var showFullText = false
+    @State private var showAllOptions = false
 
     /// Position within the waiting queue, shown as "1 / 3".
     private var queuePosition: (index: Int, total: Int)? {
         let waiting = store.waitingCards
         guard let index = waiting.firstIndex(where: { $0.id == cardId }) else { return nil }
         return (index + 1, waiting.count)
+    }
+
+    /// Options are only offered while the card is still waiting; a handled card
+    /// shows what was decided instead, so it always takes the inline layout.
+    private var options: [String] {
+        guard let card, card.status == .waiting else { return [] }
+        return card.options ?? []
+    }
+
+    private var usesSummaryLayout: Bool {
+        AskOptionLayout.showsReadFullText(total: options.count)
     }
 
     var body: some View {
@@ -38,13 +54,17 @@ struct AskDetailView: View {
                             .lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        if let body = card.body, !body.isEmpty {
-                            MarkdownView(body, scale: .document)
-                        }
+                        if usesSummaryLayout {
+                            summaryAndOptions(card)
+                        } else {
+                            if let body = card.body, !body.isEmpty {
+                                MarkdownView(body, scale: .document)
+                            }
 
-                        if let attachments = card.attachments, !attachments.isEmpty {
-                            AttachmentStrip(attachments: attachments) { attachment in
-                                preview = previewTarget(for: attachment, in: attachments)
+                            if let attachments = card.attachments, !attachments.isEmpty {
+                                AttachmentStrip(attachments: attachments) { attachment in
+                                    preview = previewTarget(for: attachment, in: attachments)
+                                }
                             }
                         }
 
@@ -76,9 +96,95 @@ struct AskDetailView: View {
                            author: card.map { store.displayName(for: $0.from) } ?? "",
                            timestamp: card?.createdAt,
                            taskNo: card?.task?.id)
+        .fullScreenCover(isPresented: $showFullText) {
+            if let card {
+                AskFullTextView(card: card,
+                                optionCount: options.count,
+                                recommendation: options.first)
+            }
+        }
+        .fullScreenCover(isPresented: $showAllOptions) {
+            if let card {
+                AskOptionsFullScreenView(card: card) { index in
+                    answer(card, optionIdx: index)
+                }
+            }
+        }
         .task {
             card = await store.loadCardDetail(cardId)
         }
+    }
+
+    private func answer(_ card: ReplyCard, optionIdx: Int) {
+        Task {
+            await store.answer(card: card, optionIdx: optionIdx, text: nil)
+            dismiss()
+        }
+    }
+
+    // MARK: Summary layout (4+ options)
+
+    /// Body compressed to its opening paragraph, a way into the full text, then
+    /// every option. The whole set has to be reachable without a scroll, which
+    /// is why the body gives up its space rather than the options.
+    @ViewBuilder
+    private func summaryAndOptions(_ card: ReplyCard) -> some View {
+        let blocks = MarkdownParser.parse(card.body ?? "")
+        let attachments = card.attachments ?? []
+
+        if let context = firstParagraph(blocks) {
+            Text(MarkdownParser.inline(context))
+                .font(.ocCallout)
+                .foregroundStyle(OC.labelSecondary)
+                .lineSpacing(4)
+                .lineLimit(AskOptionLayout.summaryLineLimit(total: options.count))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if !blocks.isEmpty || !attachments.isEmpty {
+            ReadFullTextRow(blockCount: blocks.count,
+                            attachmentCount: attachments.count) {
+                showFullText = true
+            }
+        }
+
+        Hairline()
+
+        HStack(spacing: 8) {
+            Text("選一個決定")
+                .font(.system(size: 12.5, weight: .bold))
+                .tracking(0.5)
+                .foregroundStyle(OC.labelTertiary)
+            Spacer()
+            Text("\(options.count) 個選項")
+                .font(.ocFootnoteSmall)
+                .foregroundStyle(OC.labelQuaternary)
+        }
+
+        if AskOptionLayout.suggestsFewerOptions(total: options.count) {
+            TooManyOptionsNote(count: options.count)
+        }
+
+        VStack(spacing: 8) {
+            let inline = AskOptionLayout.inlineCount(total: options.count)
+            ForEach(Array(options.prefix(inline).enumerated()), id: \.offset) { index, option in
+                ReplyOptionRow(index: index, text: option, isRecommended: index == 0) {
+                    answer(card, optionIdx: index)
+                }
+            }
+
+            let overflow = AskOptionLayout.overflowCount(total: options.count)
+            if overflow > 0 {
+                MoreOptionsRow(count: overflow) { showAllOptions = true }
+            }
+        }
+    }
+
+    private func firstParagraph(_ blocks: [MarkdownBlock]) -> String? {
+        for block in blocks {
+            if case .paragraph(let text) = block { return text }
+        }
+        return nil
     }
 
     // MARK: Chrome
@@ -182,13 +288,13 @@ struct AskDetailView: View {
 
     private func actionArea(_ card: ReplyCard) -> some View {
         VStack(spacing: 9) {
-            if let options = card.options, !options.isEmpty {
+            // With four options or more they have already been laid out above,
+            // in the content area — pinning them here as well would show every
+            // option twice.
+            if !usesSummaryLayout {
                 ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                     ReplyOptionRow(index: index, text: option, isRecommended: index == 0) {
-                        Task {
-                            await store.answer(card: card, optionIdx: index, text: nil)
-                            dismiss()
-                        }
+                        answer(card, optionIdx: index)
                     }
                 }
             }

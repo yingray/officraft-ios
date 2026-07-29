@@ -12,6 +12,8 @@ struct AskCardView: View {
     /// Required, not optional: an optional handler meant a caller could ship a
     /// strip of tappable-looking chips that silently did nothing.
     var onOpenAttachment: (Attachment) -> Void
+    /// Opens the full-screen option list — the doc's answer to "選項一多怎麼辦".
+    var onShowAllOptions: () -> Void
 
     @Environment(StudioStore.self) private var store
 
@@ -27,7 +29,9 @@ struct AskCardView: View {
                     .font(.ocSubhead)
                     .foregroundStyle(OC.labelSecondary)
                     .lineSpacing(3)
-                    .lineLimit(3)
+                    // A short option list can afford a longer summary; a long
+                    // one needs the rows back.
+                    .lineLimit(AskOptionLayout.summaryLineLimit(total: options.count))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -40,8 +44,13 @@ struct AskCardView: View {
             }
 
             if !options.isEmpty {
+                if AskOptionLayout.suggestsFewerOptions(total: options.count) {
+                    TooManyOptionsNote(count: options.count)
+                }
+
                 VStack(spacing: 8) {
-                    ForEach(Array(options.prefix(3).enumerated()), id: \.offset) { index, option in
+                    let inline = AskOptionLayout.inlineCount(total: options.count)
+                    ForEach(Array(options.prefix(inline).enumerated()), id: \.offset) { index, option in
                         ReplyOptionRow(
                             index: index,
                             text: option,
@@ -51,14 +60,14 @@ struct AskCardView: View {
                             onAnswer(index)
                         }
                     }
-                }
-                if options.count > 3 {
-                    Button(action: onOpenDetail) {
-                        Text("還有 \(options.count - 3) 個選項")
-                            .font(.ocFootnote)
-                            .foregroundStyle(OC.accent)
+
+                    // Up to six they are all here. Past that the tail folds into
+                    // one row that opens the options full screen — the card still
+                    // never asks the owner to scroll before deciding.
+                    let overflow = AskOptionLayout.overflowCount(total: options.count)
+                    if overflow > 0 {
+                        MoreOptionsRow(count: overflow, action: onShowAllOptions)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
