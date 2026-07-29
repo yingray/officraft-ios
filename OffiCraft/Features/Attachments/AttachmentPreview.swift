@@ -366,7 +366,11 @@ struct ImageLightboxView: View {
 
 // MARK: - Markdown sheet
 
-/// Full-text markdown preview with a rendered / source toggle.
+/// Full-text markdown preview.
+///
+/// Rendered only — there is no source toggle. The raw markdown is what the
+/// agent wrote, not what the reader came for, and the share and download
+/// buttons already hand over the source for anyone who does want it.
 struct MarkdownPreviewView: View {
     let attachment: Attachment
     var author: String = ""
@@ -377,15 +381,11 @@ struct MarkdownPreviewView: View {
     @Environment(StudioStore.self) private var store
 
     @State private var source: String?
-    @State private var mode: Mode = .rendered
-
-    private enum Mode: Hashable { case rendered, source }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 header
-                modePicker
                 content
                 footer
             }
@@ -417,7 +417,9 @@ struct MarkdownPreviewView: View {
                     .foregroundStyle(OC.accent)
             }
             .padding(.horizontal, 18)
-            .padding(.top, 6)
+            // Clear of the sheet's drag indicator, which sits at the very top
+            // and otherwise crowds the filename.
+            .padding(.top, 20)
             .padding(.bottom, 12)
             Hairline()
         }
@@ -431,46 +433,12 @@ struct MarkdownPreviewView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var modePicker: some View {
-        HStack(spacing: 6) {
-            picker(title: "渲染", value: .rendered)
-            picker(title: "原始碼", value: .source)
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-    }
-
-    private func picker(title: String, value: Mode) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.18)) { mode = value }
-        } label: {
-            Text(title)
-                .font(.system(size: 13, weight: mode == value ? .semibold : .regular))
-                .foregroundStyle(mode == value ? OC.label : OC.labelTertiary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(mode == value ? OC.surface2 : .clear)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
     @ViewBuilder
     private var content: some View {
         ScrollView {
             Group {
                 if let source {
-                    if mode == .rendered {
-                        MarkdownView(source, scale: .document)
-                    } else {
-                        Text(source)
-                            .font(.ocMono(12.5))
-                            .foregroundStyle(OC.labelBody)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    MarkdownView(source, scale: .document)
                 } else {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
                 }

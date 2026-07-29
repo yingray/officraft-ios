@@ -284,6 +284,8 @@ struct TableBlock: View {
     let rows: [[String]]
     var alignments: [MarkdownBlock.ColumnAlignment] = []
 
+    @Environment(\.displayScale) private var displayScale
+
     private var columnCount: Int {
         max(header.count, rows.map(\.count).max() ?? 0)
     }
@@ -341,6 +343,13 @@ struct TableBlock: View {
                     }
                 }
             }
+            // Hold the grid at its natural width. Offered less than that — any
+            // table wider than the screen — Grid compresses the columns, and a
+            // cell then draws narrower than it was measured at, wraps an extra
+            // line and spills past the row height already allocated. That is
+            // what cut the last row off. The scroll view is here to carry the
+            // overflow, so refuse the squeeze and let it scroll.
+            .fixedSize(horizontal: true, vertical: false)
         }
         // A table that already fits must not rubber-band, or every one of them
         // reads as scrollable.
@@ -379,7 +388,17 @@ struct TableBlock: View {
         // otherwise sit centred with untinted bands above and below.
         .frame(maxHeight: .infinity)
         // The tint has to sit on the cell — GridRow takes no background.
-        .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
+        .background(isHeader ? OC.label.opacity(0.06) : Color.clear)
+        // A rule between columns. Rows already have one; without the vertical
+        // pair a wide table reads as one block of text and the eye loses which
+        // value belongs to which column.
+        .overlay(alignment: .trailing) {
+            if column < columnCount - 1 {
+                Rectangle()
+                    .fill(OC.separator)
+                    .frame(width: 1 / max(displayScale, 1))
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel(
             isHeader || columnHeader(column).isEmpty
