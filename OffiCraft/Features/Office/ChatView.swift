@@ -25,6 +25,10 @@ struct ChatView: View {
     /// Folded runs the owner has opened, keyed by their first message id.
     /// Empty by design: inter-agent chatter and handover notices start closed.
     @State private var expandedRuns: Set<String> = []
+    /// Overlong messages the owner has opened out, keyed by message id. Same
+    /// reason as the runs above: an id survives an SSE refetch, a position
+    /// does not.
+    @State private var expandedMessages: Set<String> = []
     /// Whether the transcript has already been placed once. Guards the
     /// highlight jump so it happens on the first load and never again.
     @State private var didAnchor = false
@@ -298,6 +302,8 @@ struct ChatView: View {
                             lane: run.lane,
                             header: routing(of: message),
                             message: message,
+                            isExpanded: expandedMessages.contains(message.id),
+                            onToggleExpanded: { toggleMessage(message.id) },
                             onOpenAttachment: { attachment in
                                 openPreview(attachment, in: message)
                             }
@@ -314,10 +320,20 @@ struct ChatView: View {
             message: message,
             isOwn: message.isOwn(ownerId: session.ownerId),
             isHighlighted: message.id == highlightMessageId,
+            isExpanded: expandedMessages.contains(message.id),
+            onToggleExpanded: { toggleMessage(message.id) },
             onOpenAttachment: { attachment in openPreview(attachment, in: message) },
             onOpenCard: { openCard = CardRoute(id: $0) }
         )
         .id(message.id)
+    }
+
+    private func toggleMessage(_ id: String) {
+        if expandedMessages.contains(id) {
+            expandedMessages.remove(id)
+        } else {
+            expandedMessages.insert(id)
+        }
     }
 
     private func openPreview(_ attachment: Attachment, in message: ChatMessage) {
@@ -413,6 +429,8 @@ private struct MessageRow: View {
     let message: ChatMessage
     let isOwn: Bool
     var isHighlighted: Bool = false
+    var isExpanded: Bool = false
+    var onToggleExpanded: () -> Void = {}
     var onOpenAttachment: (Attachment) -> Void
     var onOpenCard: (String) -> Void
 
@@ -432,21 +450,27 @@ private struct MessageRow: View {
         if isOwn {
             VStack(alignment: .trailing, spacing: 8) {
                 if !message.body.isEmpty {
-                    Text(message.body)
-                        .font(.ocCallout)
-                        .foregroundStyle(OC.bubbleOwnText)
-                        .lineSpacing(4)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
-                        .background(
-                            UnevenRoundedRectangle(
-                                topLeadingRadius: 20, bottomLeadingRadius: 20,
-                                bottomTrailingRadius: 6, topTrailingRadius: 20,
-                                style: .continuous
-                            )
-                            .fill(OC.bubbleOwn)
+                    CollapsibleMessageBody(
+                        isExpanded: isExpanded,
+                        alignment: .trailing,
+                        tint: OC.bubbleOwnText.opacity(0.65),
+                        onToggle: onToggleExpanded
+                    ) {
+                        Text(message.body)
+                            .font(.ocCallout)
+                            .foregroundStyle(OC.bubbleOwnText)
+                            .lineSpacing(4)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 20, bottomLeadingRadius: 20,
+                            bottomTrailingRadius: 6, topTrailingRadius: 20,
+                            style: .continuous
                         )
-                        .fixedSize(horizontal: false, vertical: true)
+                        .fill(OC.bubbleOwn)
+                    )
                 }
                 // What the owner sent is previewable too — it used to render
                 // as text only, so their own files were invisible.
@@ -460,7 +484,10 @@ private struct MessageRow: View {
                     cardAnnouncementHeader
                 }
 
-                MarkdownView(message.body, scale: .message)
+                CollapsibleMessageBody(isExpanded: isExpanded,
+                                       onToggle: onToggleExpanded) {
+                    MarkdownView(message.body, scale: .message)
+                }
 
                 if let attachments = message.attachments, !attachments.isEmpty {
                     AttachmentStrip(attachments: attachments, onOpen: onOpenAttachment)

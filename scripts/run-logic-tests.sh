@@ -24,6 +24,7 @@ swiftc -O \
   "$ROOT/OffiCraft/Models/StudioSettings.swift" \
   "$ROOT/OffiCraft/Features/Asks/AskOptionLayout.swift" \
   "$ROOT/OffiCraft/Features/Office/ChatLane.swift" \
+  "$ROOT/OffiCraft/Features/Office/ChatMessageClamp.swift" \
   -o "$OUT/logic-tests"
 
 "$OUT/logic-tests"

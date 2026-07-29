@@ -102,6 +102,8 @@ struct ChatFoldedMessageRow: View {
     let lane: ChatLane
     let header: String
     let message: ChatMessage
+    var isExpanded: Bool = false
+    var onToggleExpanded: () -> Void = {}
     var onOpenAttachment: (Attachment) -> Void
 
     var body: some View {
@@ -112,7 +114,10 @@ struct ChatFoldedMessageRow: View {
                 .lineLimit(1)
 
             VStack(alignment: .leading, spacing: 8) {
-                MarkdownView(message.body, scale: .message)
+                CollapsibleMessageBody(isExpanded: isExpanded,
+                                       onToggle: onToggleExpanded) {
+                    MarkdownView(message.body, scale: .message)
+                }
 
                 if let attachments = message.attachments, !attachments.isEmpty {
                     AttachmentStrip(attachments: attachments,

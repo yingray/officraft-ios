@@ -583,6 +583,29 @@ check("seven short options need a door",
       AskOptionLayout.needsFullList(Array(repeating: "短", count: 7)))
 check("no options need no door", !AskOptionLayout.needsFullList([]))
 
+// MARK: - Overlong chat messages
+
+print("\nlong message folding")
+
+check("nothing folds before the first measurement",
+      !ChatMessageClamp.isOverlong(naturalHeight: 0))
+check("a normal message is left alone",
+      !ChatMessageClamp.isOverlong(naturalHeight: 180))
+// The slack rule: a message only a little over the cap keeps all of itself
+// rather than losing two lines to a 展開 row.
+check("a message just over the cap is left alone",
+      !ChatMessageClamp.isOverlong(naturalHeight: ChatMessageClamp.collapsedHeight + 10))
+check("a message past the slack folds",
+      ChatMessageClamp.isOverlong(naturalHeight: ChatMessageClamp.foldThreshold + 1))
+
+check("a short message gets no cap",
+      ChatMessageClamp.cap(naturalHeight: 180, isExpanded: false) == nil)
+check("an overlong message is capped at the collapsed height",
+      ChatMessageClamp.cap(naturalHeight: 2000, isExpanded: false)
+          == ChatMessageClamp.collapsedHeight)
+check("an opened message is not capped",
+      ChatMessageClamp.cap(naturalHeight: 2000, isExpanded: true) == nil)
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")
