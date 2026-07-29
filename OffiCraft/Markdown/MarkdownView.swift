@@ -132,8 +132,8 @@ struct MarkdownView: View {
         case .code(let language, let source):
             CodeBlock(language: language, source: source, fontSize: scale.code)
 
-        case .table(let header, let rows):
-            TableBlock(header: header, rows: rows)
+        case .table(let header, let rows, let alignments):
+            TableBlock(header: header, rows: rows, alignments: alignments)
 
         case .divider:
             Hairline()
@@ -273,36 +273,71 @@ struct CodeBlock: View {
 
 // MARK: - Table
 
-/// The other horizontally scrollable block. Column widths come from the
-/// content, so a wide table scrolls rather than squeezing every cell.
+/// The other horizontally scrollable block.
+///
+/// Laid out with `Grid`, which is the whole point: it negotiates one width per
+/// column across every row. The previous per-row `HStack` sized each row from
+/// its own text, so a long cell in the body pushed that row's columns out of
+/// register with the header — the reported 跑版.
 struct TableBlock: View {
     let header: [String]
     let rows: [[String]]
+    var alignments: [MarkdownBlock.ColumnAlignment] = []
 
     private var columnCount: Int {
         max(header.count, rows.map(\.count).max() ?? 0)
     }
 
+    private func alignment(_ column: Int) -> HorizontalAlignment {
+        guard alignments.indices.contains(column) else { return .leading }
+        switch alignments[column] {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
+    private func textAlignment(_ column: Int) -> TextAlignment {
+        switch alignment(column) {
+        case .center: return .center
+        case .trailing: return .trailing
+        default: return .leading
+        }
+    }
+
+    private func frameAlignment(_ column: Int) -> Alignment {
+        switch alignment(column) {
+        case .center: return .center
+        case .trailing: return .trailing
+        default: return .leading
+        }
+    }
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(spacing: 0) {
-                headerRow
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        cell(header.indices.contains(column) ? header[column] : "",
+                             isHeader: true,
+                             column: column)
+                            .gridColumnAlignment(alignment(column))
+                    }
+                }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     Hairline()
-                    HStack(spacing: 0) {
+                        .gridCellUnsizedAxes(.horizontal)
+                        .gridCellColumns(columnCount)
+                    GridRow {
                         ForEach(0..<columnCount, id: \.self) { column in
                             cell(row.indices.contains(column) ? row[column] : "",
                                  isHeader: false,
-                                 isFirst: column == 0)
+                                 column: column)
                         }
                     }
                 }
             }
-            .frame(minWidth: 0)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous).fill(.clear)
-        )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(OC.hairline, lineWidth: 1)
@@ -310,24 +345,20 @@ struct TableBlock: View {
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<columnCount, id: \.self) { column in
-                cell(header.indices.contains(column) ? header[column] : "",
-                     isHeader: true,
-                     isFirst: column == 0)
-            }
-        }
-        .background(OC.label.opacity(0.04))
-    }
-
-    private func cell(_ text: String, isHeader: Bool, isFirst: Bool) -> some View {
+    private func cell(_ text: String, isHeader: Bool, column: Int) -> some View {
         Text(MarkdownParser.inline(text))
             .font(.system(size: 12.5, weight: isHeader ? .bold : .regular))
             .foregroundStyle(isHeader ? OC.labelSecondary : OC.labelBody)
-            .lineLimit(2)
+            .multilineTextAlignment(textAlignment(column))
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(minWidth: isFirst ? 96 : 66, alignment: .leading)
+            .frame(minWidth: column == 0 ? 96 : 66,
+                   maxWidth: 260,
+                   alignment: frameAlignment(column))
+            // The header tint has to sit on the cell: GridRow takes no
+            // background of its own.
+            .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
     }
 }

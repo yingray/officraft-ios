@@ -16,7 +16,7 @@ enum MarkdownBlock: Identifiable, Hashable {
     case orderedList([ListItem])
     case taskList([TaskItem])
     case code(language: String?, source: String)
-    case table(header: [String], rows: [[String]])
+    case table(header: [String], rows: [[String]], alignments: [ColumnAlignment])
     case divider
 
     var id: Int { hashValue }
@@ -31,6 +31,11 @@ enum MarkdownBlock: Identifiable, Hashable {
         let text: String
         let isDone: Bool
         var depth: Int = 0
+    }
+
+    /// Column alignment from the delimiter row: `:---` / `:---:` / `---:`.
+    enum ColumnAlignment: Hashable {
+        case leading, center, trailing
     }
 
     enum AlertKind: String, Hashable {
@@ -99,9 +104,9 @@ enum MarkdownParser {
             }
 
             // Table — a header row followed by a delimiter row.
-            if trimmed.contains("|"), index + 1 < lines.count,
-               isTableDelimiter(lines[index + 1]) {
+            if isTableStart(lines, index) {
                 let header = splitRow(trimmed)
+                let alignments = columnAlignments(lines[index + 1])
                 var rows: [[String]] = []
                 index += 2
                 while index < lines.count {
@@ -110,7 +115,7 @@ enum MarkdownParser {
                     rows.append(splitRow(candidate))
                     index += 1
                 }
-                blocks.append(.table(header: header, rows: rows))
+                blocks.append(.table(header: header, rows: rows, alignments: alignments))
                 continue
             }
 
@@ -188,6 +193,10 @@ enum MarkdownParser {
                 let raw = lines[index]
                 let candidate = raw.trimmingCharacters(in: .whitespaces)
                 if candidate.isEmpty || startsBlock(candidate) { break }
+                // A table needs two lines to recognise, which `startsBlock`
+                // cannot do from one — check it separately or the table gets
+                // eaten by the paragraph.
+                if isTableStart(lines, index) { break }
                 paragraph.append(candidate)
                 index += 1
             }
@@ -266,6 +275,25 @@ enum MarkdownParser {
         guard trimmed.hasPrefix("[!"), let close = trimmed.firstIndex(of: "]") else { return nil }
         let raw = trimmed[trimmed.index(trimmed.startIndex, offsetBy: 2)..<close]
         return MarkdownBlock.AlertKind(rawValue: raw.uppercased())
+    }
+
+    /// A table starts where a pipe-bearing line is followed by a delimiter row.
+    private static func isTableStart(_ lines: [String], _ index: Int) -> Bool {
+        guard index + 1 < lines.count else { return false }
+        return lines[index].contains("|") && isTableDelimiter(lines[index + 1])
+    }
+
+    /// Reads `:---` / `:---:` / `---:` out of the delimiter row.
+    private static func columnAlignments(_ line: String) -> [MarkdownBlock.ColumnAlignment] {
+        splitRow(line).map { spec in
+            let leading = spec.hasPrefix(":")
+            let trailing = spec.hasSuffix(":")
+            switch (leading, trailing) {
+            case (true, true): return .center
+            case (false, true): return .trailing
+            default: return .leading
+            }
+        }
     }
 
     private static func isTableDelimiter(_ line: String) -> Bool {
