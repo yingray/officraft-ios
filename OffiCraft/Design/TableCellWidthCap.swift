@@ -28,7 +28,16 @@ struct TableCellWidthCap: Layout {
         // The ideal, not the proposal: inside a horizontal ScrollView the
         // proposed width is unbounded, so asking for it would defeat the cap.
         let ideal = subview.sizeThatFits(.unspecified).width
-        let width = min(max(ideal, minWidth), maxWidth)
+        var width = min(max(ideal, minWidth), maxWidth)
+        // Once Grid has settled the column it proposes that width back. Taking
+        // it when it is finite and wider does two things: a short header cell
+        // fills its column, so the tint has no gap, and the height below is
+        // measured at the width the cell is actually drawn at rather than at a
+        // narrower guess — measuring narrow is what left the last row a line
+        // short of what it rendered.
+        if let proposed = proposal.width, proposed.isFinite, proposed > width {
+            width = proposed
+        }
         let measured = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
         return CGSize(width: width, height: measured.height)
     }
@@ -38,9 +47,11 @@ struct TableCellWidthCap: Layout {
                        subviews: Subviews,
                        cache: inout ()) {
         guard let subview = subviews.first else { return }
-        // `bounds` is the column width Grid settled on, which is the widest
-        // cell in this column — never narrower than what we measured, so the
-        // height we reported stays an upper bound and rows cannot overlap.
+        // `bounds` is the column width Grid settled on. That is only the widest
+        // cell in the column while Grid is free to take its natural width — squeeze
+        // the grid and it hands back less, the text wraps an extra line and the row
+        // overflows. TableBlock pins the grid with `fixedSize` so that cannot
+        // happen; without it the height reported above stops being an upper bound.
         subview.place(at: bounds.origin,
                       proposal: ProposedViewSize(bounds.size))
     }

@@ -279,10 +279,22 @@ struct CodeBlock: View {
 /// column across every row. The previous per-row `HStack` sized each row from
 /// its own text, so a long cell in the body pushed that row's columns out of
 /// register with the header — the reported 跑版.
+/// The width the grid settles at, so the box can hug a table that does not need
+/// the full column.
+private struct TableContentWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct TableBlock: View {
     let header: [String]
     let rows: [[String]]
     var alignments: [MarkdownBlock.ColumnAlignment] = []
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var contentWidth: CGFloat = 0
 
     private var columnCount: Int {
         max(header.count, rows.map(\.count).max() ?? 0)
@@ -341,10 +353,32 @@ struct TableBlock: View {
                     }
                 }
             }
+            // Hold the grid at its natural size on both axes. Offered less than
+            // that, Grid compresses: squeezed horizontally — any table wider
+            // than the screen — a cell draws narrower than it was measured at,
+            // wraps an extra line and spills past its row, which cut the last
+            // row off; squeezed vertically — any table taller than what is left
+            // on screen — it takes the height out of the most flexible row,
+            // which is the header, and the header text spills out of its tint.
+            // Both scroll views are here to carry the overflow, so refuse the
+            // squeeze and let them scroll.
+            .fixedSize()
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: TableContentWidthKey.self,
+                                           value: proxy.size.width)
+                }
+            )
         }
         // A table that already fits must not rubber-band, or every one of them
         // reads as scrollable.
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .onPreferenceChange(TableContentWidthKey.self) { contentWidth = $0 }
+        // Hug a table narrower than the column. The border and the header tint
+        // stop at the last column instead of running on across empty space,
+        // which read as an unfinished table. A wider one is capped by what is
+        // available and scrolls, exactly as before.
+        .frame(maxWidth: contentWidth > 0 ? contentWidth : .infinity, alignment: .leading)
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(OC.hairline, lineWidth: 1)
@@ -379,7 +413,17 @@ struct TableBlock: View {
         // otherwise sit centred with untinted bands above and below.
         .frame(maxHeight: .infinity)
         // The tint has to sit on the cell — GridRow takes no background.
-        .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
+        .background(isHeader ? OC.label.opacity(0.06) : Color.clear)
+        // A rule between columns. Rows already have one; without the vertical
+        // pair a wide table reads as one block of text and the eye loses which
+        // value belongs to which column.
+        .overlay(alignment: .trailing) {
+            if column < columnCount - 1 {
+                Rectangle()
+                    .fill(OC.separator)
+                    .frame(width: 1 / max(displayScale, 1))
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel(
             isHeader || columnHeader(column).isEmpty
