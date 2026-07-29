@@ -20,6 +20,7 @@ swiftc -O \
   "$ROOT/OffiCraft/Markdown/MarkdownParser.swift" \
   "$ROOT/OffiCraft/Design/SVGPath.swift" \
   "$ROOT/OffiCraft/Design/Formatters.swift" \
+  "$ROOT/OffiCraft/Models/UsageWindow.swift" \
   -o "$OUT/logic-tests"
 
 "$OUT/logic-tests"

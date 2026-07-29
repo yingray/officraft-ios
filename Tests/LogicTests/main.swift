@@ -69,7 +69,7 @@ for block in blocks {
     switch block {
     case .heading(let level, let text): headings.append((level, text))
     case .alert(let kind, _): alerts.append(kind)
-    case .table(let header, let rows): tables.append((header, rows))
+    case .table(let header, let rows, _): tables.append((header, rows))
     case .taskList(let items): taskItems += items
     case .code(let language, let source): codeBlocks.append((language, source))
     case .bulletList(let items): bullets += items.count
@@ -120,6 +120,116 @@ if case .bulletList(let items) = nested.first {
 // A fence that never closes must not hang or drop the rest.
 let unterminated = MarkdownParser.parse("```go\nfunc main() {\n")
 check("unterminated fence recovers", unterminated.count == 1, "got \(unterminated.count)")
+
+// Tables that are NOT preceded by a blank line — the shape agents actually
+// emit. This used to be swallowed into the paragraph and rendered as literal
+// pipes.
+func tableBlocks(_ source: String) -> [(header: [String], rows: [[String]], aligns: [MarkdownBlock.ColumnAlignment])] {
+    MarkdownParser.parse(source).compactMap {
+        if case .table(let h, let r, let a) = $0 { return (h, r, a) }
+        return nil
+    }
+}
+
+let tight = """
+這是說明文字
+| 帳號 | session |
+| --- | --- |
+| seth@ | 861 |
+"""
+let tightTables = tableBlocks(tight)
+check("table right after prose is parsed", tightTables.count == 1,
+      "got \(MarkdownParser.parse(tight).count) blocks, \(tightTables.count) tables")
+check("…and the prose survives as its own paragraph",
+      MarkdownParser.parse(tight).contains { if case .paragraph(let t) = $0 { return t == "這是說明文字" }; return false })
+check("…with the right header", tightTables.first?.header == ["帳號", "session"],
+      "got \(String(describing: tightTables.first?.header))")
+
+// Text sandwiched between two tables: the second one used to be lost.
+let sandwich = """
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+說明
+| c | d |
+| --- | --- |
+| 3 | 4 |
+"""
+check("both tables around prose survive", tableBlocks(sandwich).count == 2,
+      "got \(tableBlocks(sandwich).count)")
+
+// Alignment specifiers must reach the AST.
+let aligned = tableBlocks("""
+| 左 | 中 | 右 |
+|:---|:---:|---:|
+| a | b | c |
+""")
+check("column alignments parsed",
+      aligned.first?.aligns == [.leading, .center, .trailing],
+      "got \(String(describing: aligned.first?.aligns))")
+
+// Pipe-less outer edges are legal GitHub markdown.
+let bare = tableBlocks("""
+帳號 | 用量
+--- | ---
+seth@ | 86%
+""")
+check("table without outer pipes", bare.first?.header == ["帳號", "用量"],
+      "got \(String(describing: bare.first?.header))")
+check("…and its row", bare.first?.rows == [["seth@", "86%"]],
+      "got \(String(describing: bare.first?.rows))")
+
+// A table as the very last thing in the document.
+let trailing = tableBlocks("內文\n| k | v |\n| --- | --- |\n| a | 1 |")
+check("table at end of document", trailing.count == 1 && trailing.first?.rows.count == 1,
+      "got \(trailing)")
+
+// A lone delimiter-looking line must not become a table or a divider.
+let notTable = MarkdownParser.parse("| --- | --- |")
+check("delimiter row alone is not a table",
+      !notTable.contains { if case .table = $0 { return true }; return false })
+
+// MARK: - Usage window decoding
+
+print("\nusage window (wire shape)")
+
+func decodeWindow(_ json: String) -> UsageWindow? {
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try? decoder.decode(UsageWindow.self, from: Data(json.utf8))
+}
+
+let hot = decodeWindow(#"{"used_pct":86.0,"elapsed_pct":62.0,"pace":"hot","resets_at":1753800000}"#)
+check("real wire keys decode", hot?.usedPct == 86 && hot?.elapsedPct == 62,
+      "got \(String(describing: hot))")
+check("0..100 becomes a fraction", hot?.usedFraction == 0.86,
+      "got \(String(describing: hot?.usedFraction))")
+check("pace verdict read from the server", hot?.isHot == true)
+check("epoch resets_at", hot?.resetsTs == 1753800000,
+      "got \(String(describing: hot?.resetsTs))")
+
+// resets_at is `any` on the wire — an ISO string must not take the whole
+// monitoring snapshot down with it.
+let iso = decodeWindow(#"{"used_pct":41.0,"elapsed_pct":55.0,"pace":"ok","resets_at":"2026-07-29T12:00:00Z"}"#)
+check("ISO resets_at still decodes", iso != nil, "got nil")
+check("…and is parsed, not dropped", (iso?.resetsTs ?? 0) > 0,
+      "got \(String(describing: iso?.resetsTs))")
+check("ok pace is not hot", iso?.isHot == false)
+
+let nulls = decodeWindow(#"{"used_pct":null,"elapsed_pct":null,"pace":null,"resets_at":null}"#)
+check("honest nulls survive as nil", nulls != nil && nulls?.usedPct == nil && nulls?.usedFraction == nil,
+      "got \(String(describing: nulls))")
+
+let garbage = decodeWindow(#"{"used_pct":50.0,"elapsed_pct":50.0,"pace":"ok","resets_at":{"weird":1}}"#)
+check("unexpected resets_at shape degrades to nil, does not throw",
+      garbage != nil && garbage?.resetsTs == nil,
+      "got \(String(describing: garbage))")
+
+// The old invented keys must NOT decode into anything.
+let legacy = decodeWindow(#"{"pct":0.86,"used":10,"limit":100,"label":"Max 20x"}"#)
+check("the invented keys are gone", legacy?.usedPct == nil,
+      "got \(String(describing: legacy?.usedPct))")
 
 // MARK: - SVG path parser
 
