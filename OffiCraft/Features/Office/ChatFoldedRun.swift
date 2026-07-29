@@ -114,7 +114,8 @@ struct ChatFoldedMessageRow: View {
                 .lineLimit(1)
 
             VStack(alignment: .leading, spacing: 8) {
-                CollapsibleMessageBody(isExpanded: isExpanded,
+                CollapsibleMessageBody(source: message.body,
+                                       isExpanded: isExpanded,
                                        onToggle: onToggleExpanded) {
                     MarkdownView(message.body, scale: .message)
                 }

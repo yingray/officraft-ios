@@ -451,6 +451,7 @@ private struct MessageRow: View {
             VStack(alignment: .trailing, spacing: 8) {
                 if !message.body.isEmpty {
                     CollapsibleMessageBody(
+                        source: message.body,
                         isExpanded: isExpanded,
                         alignment: .trailing,
                         tint: OC.bubbleOwnText.opacity(0.65),
@@ -484,7 +485,8 @@ private struct MessageRow: View {
                     cardAnnouncementHeader
                 }
 
-                CollapsibleMessageBody(isExpanded: isExpanded,
+                CollapsibleMessageBody(source: message.body,
+                                       isExpanded: isExpanded,
                                        onToggle: onToggleExpanded) {
                     MarkdownView(message.body, scale: .message)
                 }

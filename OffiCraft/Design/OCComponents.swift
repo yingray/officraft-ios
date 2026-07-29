@@ -409,25 +409,6 @@ extension PageHeader where Trailing == EmptyView {
     }
 }
 
-/// Circular icon button in a page header (34pt, still inside a 44pt tap target).
-struct HeaderIconButton: View {
-    let icon: OCIcon
-    var size: CGFloat = 17
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Icon(icon, size: size)
-                .foregroundStyle(OC.accent)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(OC.surface))
-                .frame(width: OCMetrics.minTapTarget, height: OCMetrics.minTapTarget)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Badges
 
 /// Red count badge on a tab item or a roster row.

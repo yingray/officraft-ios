@@ -606,6 +606,27 @@ check("an overlong message is capped at the collapsed height",
 check("an opened message is not capped",
       ChatMessageClamp.cap(naturalHeight: 2000, isExpanded: true) == nil)
 
+// The seed decides the very first frame, before anything has been measured.
+// It only has to tell long from short.
+let shortReply = "好，那就先擋著，明天再看數字。"
+let longReport = doc + "\n\n" + doc
+check("a one-line reply is not folded on sight",
+      !ChatMessageClamp.isOverlong(
+          naturalHeight: ChatMessageClamp.estimatedHeight(of: shortReply)))
+check("a long report is folded on sight",
+      ChatMessageClamp.isOverlong(
+          naturalHeight: ChatMessageClamp.estimatedHeight(of: longReport)))
+check("an empty body estimates to nothing",
+      ChatMessageClamp.estimatedHeight(of: "") == 0)
+// Chinese takes two half-width slots. Counting characters flat would call this
+// half as tall as it is and leave a wall of text unfolded.
+let cjkWall = String(repeating: "這是一段很長的中文說明，講的是同一件事。\n", count: 20)
+check("a wall of Chinese is folded on sight",
+      ChatMessageClamp.isOverlong(naturalHeight: ChatMessageClamp.estimatedHeight(of: cjkWall)))
+check("Chinese is estimated taller than the same count of latin",
+      ChatMessageClamp.estimatedHeight(of: String(repeating: "中", count: 40))
+          > ChatMessageClamp.estimatedHeight(of: String(repeating: "a", count: 40)))
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

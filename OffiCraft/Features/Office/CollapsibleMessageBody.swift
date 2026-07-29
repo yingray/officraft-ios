@@ -13,6 +13,12 @@ import SwiftUI
 /// mask fades the content itself, so this works on any bubble fill and no
 /// caller has to hand its background colour in.
 struct CollapsibleMessageBody<Content: View>: View {
+    /// The raw text behind `content`, used only to guess a height for the very
+    /// first frame. The transcript is a `LazyVStack` — a row's state is thrown
+    /// away when it scrolls off and rebuilt when it comes back — so waiting for
+    /// a measurement would draw the message out in full, every time, before
+    /// snapping shut.
+    let source: String
     /// Whether the owner has opened this one. Held by the transcript, keyed by
     /// message id, so an SSE refetch that swaps the array does not close it.
     let isExpanded: Bool
@@ -23,7 +29,13 @@ struct CollapsibleMessageBody<Content: View>: View {
     var onToggle: () -> Void
     @ViewBuilder var content: Content
 
-    @State private var naturalHeight: CGFloat = 0
+    /// Nil until the row has been laid out once; the estimate stands in for it
+    /// until then, and the real height replaces it for good afterwards.
+    @State private var measuredHeight: CGFloat?
+
+    private var naturalHeight: CGFloat {
+        measuredHeight ?? ChatMessageClamp.estimatedHeight(of: source)
+    }
 
     private var isOverlong: Bool {
         ChatMessageClamp.isOverlong(naturalHeight: naturalHeight)
@@ -49,8 +61,8 @@ struct CollapsibleMessageBody<Content: View>: View {
                             // as a change, not on appear.
                             .onChange(of: proxy.size.height, initial: true) { _, height in
                                 let rounded = height.rounded()
-                                if abs(rounded - naturalHeight) >= 1 {
-                                    naturalHeight = rounded
+                                if measuredHeight.map({ abs(rounded - $0) >= 1 }) ?? true {
+                                    measuredHeight = rounded
                                 }
                             }
                     }
@@ -58,11 +70,23 @@ struct CollapsibleMessageBody<Content: View>: View {
                 .frame(maxHeight: cap, alignment: .top)
                 .clipped()
                 .mask { clipMask }
-                // Tapping the body opens it, and only opens it. Once it is
-                // open the text is text again — selecting a line or following
-                // a link must not fold it back up.
-                .contentShape(Rectangle())
-                .onTapGesture { if cap != nil { toggle() } }
+                // The tap target only exists while the message is folded, and
+                // it is an overlay rather than a gesture on the body: a
+                // gesture left attached would keep swallowing taps meant for
+                // the markdown links, the copy button and the scrollable code
+                // and table blocks underneath once the message is open.
+                .overlay {
+                    if cap != nil {
+                        Rectangle()
+                            .fill(.clear)
+                            .contentShape(Rectangle())
+                            .onTapGesture { toggle() }
+                            // Hidden from VoiceOver on purpose: an element
+                            // laid over the text would hide the text itself.
+                            // The 展開全文 row below is the accessible way in.
+                            .accessibilityHidden(true)
+                    }
+                }
 
             if isOverlong { toggleRow }
         }
@@ -76,12 +100,11 @@ struct CollapsibleMessageBody<Content: View>: View {
     /// more", not as a message that stops mid-sentence.
     @ViewBuilder
     private var clipMask: some View {
-        if let cap {
-            let fadeStart = max(0, (cap - Self.fadeHeight) / cap)
+        if cap != nil {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black, location: fadeStart),
+                    .init(color: .black, location: ChatMessageClamp.fadeStart),
                     .init(color: .black.opacity(0), location: 1),
                 ],
                 startPoint: .top,
@@ -91,8 +114,6 @@ struct CollapsibleMessageBody<Content: View>: View {
             Rectangle()
         }
     }
-
-    private static let fadeHeight: CGFloat = 46
 
     private var toggleRow: some View {
         Button(action: toggle) {
