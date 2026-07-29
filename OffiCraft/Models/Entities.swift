@@ -27,8 +27,50 @@ struct Attachment: Codable, Identifiable, Hashable {
 
 struct ReplyCardAnswer: Codable, Hashable {
     var optionIdx: Int?
+    /// The picked option's original wording. Only the light list row carries
+    /// it — the full card sends `options` and the screen resolves the wording
+    /// from `optionIdx` itself.
+    var option: String?
     var text: String?
+    /// The answer's files. Only the full card carries them.
     var attachments: [Attachment]?
+    /// How many files ride with the answer, whichever shape the wire used.
+    var attachmentCount: Int = 0
+
+    init(optionIdx: Int? = nil,
+         option: String? = nil,
+         text: String? = nil,
+         attachments: [Attachment]? = nil) {
+        self.optionIdx = optionIdx
+        self.option = option
+        self.text = text
+        self.attachments = attachments
+        self.attachmentCount = attachments?.count ?? 0
+    }
+
+    /// `answer.attachments` is two different shapes on the wire: the full card
+    /// (`GET /api/reply-cards/{id}`) sends the files, the light list row
+    /// (`GET /api/reply-cards?status=answered`) sends their count as a number.
+    /// Decoding the array only made every answered row throw — and because one
+    /// throwing fetch took the whole refresh with it, 近期已處理 was always
+    /// empty. Accept both shapes.
+    private enum CodingKeys: String, CodingKey {
+        case optionIdx, option, text, attachments
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        optionIdx = try container.decodeIfPresent(Int.self, forKey: .optionIdx)
+        option = try container.decodeIfPresent(String.self, forKey: .option)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        if let files = try? container.decode([Attachment].self, forKey: .attachments) {
+            attachments = files
+            attachmentCount = files.count
+        } else {
+            attachments = nil
+            attachmentCount = (try? container.decode(Int.self, forKey: .attachments)) ?? 0
+        }
+    }
 }
 
 struct TaskRef: Codable, Hashable {

@@ -138,24 +138,36 @@ final class StudioStore {
         )
     }
 
+    /// Each pane is taken on its own. They used to share one `try`, so a single
+    /// bad fetch blanked the others — one unreadable answered row was enough to
+    /// leave 近期已處理 empty while 待回覆 looked fine.
     func refreshReplyCards() async {
         guard !session.isDemo else { return }
-        do {
-            async let waiting = session.api.replyCards(status: .waiting)
-            async let answered = session.api.replyCards(status: .answered, limit: 20)
-            async let expired = session.api.replyCards(status: .expired, limit: 10)
-            async let counts = session.api.replyCardCounts()
 
+        async let waiting = session.api.replyCards(status: .waiting)
+        async let answered = session.api.replyCards(status: .answered, limit: 20)
+        async let expired = session.api.replyCards(status: .expired, limit: 10)
+        async let counts = session.api.replyCardCounts()
+
+        do {
             waitingCards = try await waiting.sorted { $0.createdTs < $1.createdTs }
+        } catch {
+            note(error)
+        }
+        do {
             let handled = try await (answered + expired)
             handledCards = handled.sorted {
                 ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
             }
-            cardCounts = try await counts
-            await hydrateWaitingCards()
         } catch {
             note(error)
         }
+        do {
+            cardCounts = try await counts
+        } catch {
+            note(error)
+        }
+        await hydrateWaitingCards()
     }
 
     /// Pull the body and options onto the waiting cards.

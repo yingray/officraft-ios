@@ -193,10 +193,16 @@ struct HandledAskCardView: View {
     @Environment(StudioStore.self) private var store
 
     private var chosenOption: String? {
-        guard let index = card.answer?.optionIdx,
-              let options = card.options,
-              options.indices.contains(index) else { return nil }
-        return options[index]
+        if let index = card.answer?.optionIdx,
+           let options = card.options,
+           options.indices.contains(index) {
+            return options[index]
+        }
+        // The list row carries no `options` — it sends the picked option's
+        // original wording on the answer instead. Without this the whole
+        // 近期已處理 pane read "已回覆" and nothing else.
+        if let option = card.answer?.option, !option.isEmpty { return option }
+        return nil
     }
 
     var body: some View {

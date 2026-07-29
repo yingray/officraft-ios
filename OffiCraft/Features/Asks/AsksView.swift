@@ -19,14 +19,9 @@ struct AsksView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "請示", eyebrow: studioName) {
-                HStack(spacing: 2) {
-                    HeaderIconButton(icon: .swap) { tab = .handled }
-                        .accessibilityLabel("近期已處理")
-                    HeaderIconButton(icon: .inbox, size: 15) { tab = .waiting }
-                        .accessibilityLabel("待回覆")
-                }
-            }
+            // No header buttons: the tabs right below already switch panes,
+            // with names and counts on them.
+            PageHeader(title: "請示", eyebrow: studioName)
 
             SegmentedTabs(
                 items: [
