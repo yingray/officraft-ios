@@ -444,6 +444,62 @@ check("10 options nudge", AskOptionLayout.suggestsFewerOptions(total: 10))
 check("0 options inline 0", AskOptionLayout.inlineCount(total: 0) == 0)
 check("0 options no overflow", AskOptionLayout.overflowCount(total: 0) == 0)
 
+// MARK: - Chat lanes
+
+print("\nchat lanes")
+
+let owner = "owner"
+
+check("owner → peer is direct",
+      ChatLane.classify(from: owner, to: "m-kyle", ownerId: owner) == .direct)
+check("peer → owner is direct",
+      ChatLane.classify(from: "m-kyle", to: owner, ownerId: owner) == .direct)
+check("member → member is inter-agent",
+      ChatLane.classify(from: "m-kyle", to: "m-sasha", ownerId: owner) == .interAgent)
+check("member → outsource is inter-agent",
+      ChatLane.classify(from: "m-kyle", to: "ow-3", ownerId: owner) == .interAgent)
+// System rows have the owner on neither end, so they must be tested before the
+// inter-agent rule or they land in the wrong fold.
+check("system → member is system",
+      ChatLane.classify(from: "system", to: "m-kyle", ownerId: owner) == .system)
+check("system → owner is still system",
+      ChatLane.classify(from: "system", to: owner, ownerId: owner) == .system)
+// A studio whose owner id is not the literal "owner" must still recognise both.
+check("custom owner id is direct",
+      ChatLane.classify(from: "seth", to: "m-kyle", ownerId: "seth") == .direct)
+check("literal owner stays direct under a custom id",
+      ChatLane.classify(from: "owner", to: "m-kyle", ownerId: "seth") == .direct)
+check("direct is not folded", !ChatLane.direct.isFolded)
+check("inter-agent folds", ChatLane.interAgent.isFolded)
+check("system folds", ChatLane.system.isFolded)
+
+// Runs merge neighbours only.
+check("empty transcript has no runs", ChatLane.runs(of: []).isEmpty)
+let mixed: [ChatLane] = [.direct, .interAgent, .interAgent, .system, .system, .direct]
+let mixedRuns = ChatLane.runs(of: mixed)
+check("mixed transcript groups into 4 runs", mixedRuns.count == 4, "got \(mixedRuns.count)")
+check("run 0 is one direct", mixedRuns[0] == ChatLaneRun(lane: .direct, start: 0, count: 1))
+check("run 1 is two inter-agent", mixedRuns[1] == ChatLaneRun(lane: .interAgent, start: 1, count: 2))
+check("run 2 is two system", mixedRuns[2] == ChatLaneRun(lane: .system, start: 3, count: 2))
+check("run 3 is one direct", mixedRuns[3] == ChatLaneRun(lane: .direct, start: 5, count: 1))
+
+// Runs must cover every row exactly once, in order — nothing may be dropped or
+// duplicated, which is the failure that would silently hide messages.
+let covered = mixedRuns.flatMap { Array($0.range) }
+check("runs cover every index once", covered == Array(0..<mixed.count), "got \(covered)")
+check("each run holds one lane",
+      mixedRuns.allSatisfy { run in run.range.allSatisfy { mixed[$0] == run.lane } })
+
+// A split lane does not merge across the message that separates it.
+let split: [ChatLane] = [.interAgent, .direct, .interAgent]
+let splitRuns = ChatLane.runs(of: split)
+check("a separated lane stays two folds", splitRuns.count == 3, "got \(splitRuns.count)")
+
+// One long stretch is one run.
+let long = Array(repeating: ChatLane.system, count: 7)
+check("7 system rows are one run",
+      ChatLane.runs(of: long) == [ChatLaneRun(lane: .system, start: 0, count: 7)])
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

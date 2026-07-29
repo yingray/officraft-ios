@@ -23,6 +23,9 @@ struct ChatView: View {
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
     @State private var attachmentError: String?
+    /// Folded runs the owner has opened, keyed by their first message id.
+    /// Empty by design: inter-agent chatter and handover notices start closed.
+    @State private var expandedRuns: Set<String> = []
 
     private var messages: [ChatMessage] { store.messages(with: peerId) }
 
@@ -109,27 +112,29 @@ struct ChatView: View {
 
     // MARK: Transcript
 
+    /// The transcript split into lanes: what the owner and the peer said to each
+    /// other, and the agent-to-agent and system stretches folded out of it.
+    private var runs: [ChatLaneRun] {
+        ChatLane.runs(of: messages.map {
+            ChatLane.classify(from: $0.from, to: $0.to, ownerId: session.ownerId)
+        })
+    }
+
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                        if shouldShowDaySeparator(at: index) {
-                            DaySeparator(date: message.sentAt)
+                    ForEach(runs, id: \.start) { run in
+                        if shouldShowDaySeparator(at: run.start) {
+                            DaySeparator(date: messages[run.start].sentAt)
                         }
-                        MessageRow(
-                            message: message,
-                            isOwn: message.isOwn(ownerId: session.ownerId),
-                            isHighlighted: message.id == highlightMessageId,
-                            onOpenAttachment: { attachment in
-                                previewAuthor = store.displayName(for: message.from)
-                                previewTimestamp = message.sentAt
-                                preview = previewTarget(for: attachment,
-                                                        in: message.attachments ?? [])
-                            },
-                            onOpenCard: { openCard = CardRoute(id: $0) }
-                        )
-                        .id(message.id)
+                        if run.lane.isFolded {
+                            foldedRun(run)
+                        } else {
+                            ForEach(run.range, id: \.self) { index in
+                                directRow(messages[index])
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, OCMetrics.screenPadding)
@@ -138,18 +143,116 @@ struct ChatView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: messages.count) {
-                guard let last = messages.last else { return }
-                withAnimation(.smooth) { proxy.scrollTo(last.id, anchor: .bottom) }
+                guard let anchor = bottomAnchorId else { return }
+                withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
             }
             .task {
-                // Land on the referenced message when arriving from a card.
+                // Arriving from a reply card must land on the message that
+                // announced it — including when it sits inside a folded run,
+                // which would otherwise not be in the hierarchy to scroll to.
                 if let highlightMessageId {
+                    expandRun(containing: highlightMessageId)
                     proxy.scrollTo(highlightMessageId, anchor: .center)
-                } else if let last = messages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
+                } else if let anchor = bottomAnchorId {
+                    proxy.scrollTo(anchor, anchor: .bottom)
                 }
             }
         }
+    }
+
+    /// The id to scroll to for "the bottom". A collapsed run hides its messages,
+    /// so the last message's id may not exist in the hierarchy — the run's own
+    /// id is the row that does.
+    private var bottomAnchorId: String? {
+        guard let last = runs.last else { return nil }
+        if last.lane.isFolded, !expandedRuns.contains(runId(last)) {
+            return runId(last)
+        }
+        return messages[last.range.upperBound - 1].id
+    }
+
+    /// Runs are keyed by their first message, not by their index: an index would
+    /// move the moment a new message lands and quietly reopen or close a fold.
+    private func runId(_ run: ChatLaneRun) -> String { messages[run.start].id }
+
+    private func expandRun(containing messageId: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }),
+              let run = runs.first(where: { $0.range.contains(index) }),
+              run.lane.isFolded else { return }
+        expandedRuns.insert(runId(run))
+    }
+
+    @ViewBuilder
+    private func foldedRun(_ run: ChatLaneRun) -> some View {
+        let key = runId(run)
+        let isExpanded = expandedRuns.contains(key)
+
+        VStack(alignment: .leading, spacing: 9) {
+            ChatFoldRow(lane: run.lane,
+                        count: run.count,
+                        isExpanded: isExpanded,
+                        participants: participants(in: run)) {
+                withAnimation(.snappy(duration: 0.22)) {
+                    if isExpanded { expandedRuns.remove(key) } else { expandedRuns.insert(key) }
+                }
+            }
+            .id(key)
+
+            if isExpanded {
+                ChatFoldedBody(lane: run.lane) {
+                    ForEach(run.range, id: \.self) { index in
+                        let message = messages[index]
+                        ChatFoldedMessageRow(
+                            lane: run.lane,
+                            header: routing(of: message),
+                            message: message,
+                            onOpenAttachment: { attachment in
+                                openPreview(attachment, in: message)
+                            }
+                        )
+                        .id(message.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func directRow(_ message: ChatMessage) -> some View {
+        MessageRow(
+            message: message,
+            isOwn: message.isOwn(ownerId: session.ownerId),
+            isHighlighted: message.id == highlightMessageId,
+            onOpenAttachment: { attachment in openPreview(attachment, in: message) },
+            onOpenCard: { openCard = CardRoute(id: $0) }
+        )
+        .id(message.id)
+    }
+
+    private func openPreview(_ attachment: Attachment, in message: ChatMessage) {
+        previewAuthor = store.displayName(for: message.from)
+        previewTimestamp = message.sentAt
+        preview = previewTarget(for: attachment, in: message.attachments ?? [])
+    }
+
+    /// "Kyle → Sasha" — the doc's rule for an opened fold. Without it a folded
+    /// row has nothing on screen naming who spoke: the owner is on neither end,
+    /// so bubble alignment cannot carry it.
+    private func routing(of message: ChatMessage) -> String {
+        "\(store.displayName(for: message.from)) → \(store.displayName(for: message.to))"
+    }
+
+    /// "Kyle ⇄ Sasha" — who a collapsed inter-agent run is between. Ordered by
+    /// first appearance so the row does not reshuffle as messages arrive.
+    private func participants(in run: ChatLaneRun) -> String {
+        guard run.lane == .interAgent else { return "" }
+        var seen: [String] = []
+        for index in run.range {
+            for id in [messages[index].from, messages[index].to] where !seen.contains(id) {
+                seen.append(id)
+            }
+        }
+        if seen.count > 2 { return "\(seen.count) 方" }
+        return seen.map { store.displayName(for: $0) }.joined(separator: " ⇄ ")
     }
 
     private func shouldShowDaySeparator(at index: Int) -> Bool {

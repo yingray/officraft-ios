@@ -67,6 +67,9 @@ final class StudioStore {
     var waitingCardCount: Int { max(cardCounts.waiting, waitingCards.count) }
 
     func displayName(for id: String) -> String {
+        // Server-authored rows carry a synthetic sender that is not on the
+        // roster, so without this they would render their raw id.
+        if id == ChatLane.systemSenderId { return "系統" }
         if session.isDemo { return DemoData.displayName(for: id) }
         if let member = members.first(where: { $0.id == id }) { return member.name }
         if let worker = outsourceWorkers.first(where: { $0.id == id }) { return "外包 \(worker.codename)" }
