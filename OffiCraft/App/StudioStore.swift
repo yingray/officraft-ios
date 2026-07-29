@@ -28,6 +28,7 @@ final class StudioStore {
     private(set) var unreadTotal = 0
 
     private(set) var monitoring = MonitorSnapshot()
+    private(set) var settings = StudioSettings()
     private(set) var threads: [String: [ChatMessage]] = [:]
 
     private(set) var isLoading = false
@@ -106,6 +107,7 @@ final class StudioStore {
             group.addTask { await self.refreshTasks() }
             group.addTask { await self.refreshOffice() }
             group.addTask { await self.refreshMonitoring() }
+            group.addTask { await self.refreshSettings() }
         }
         startListening()
     }
@@ -122,6 +124,7 @@ final class StudioStore {
         outsourceWorkers = DemoData.outsourceWorkers
         unreadTotal = DemoData.members.reduce(0) { $0 + $1.unreadCount }
         monitoring = DemoData.monitoring
+        settings = DemoData.settings
     }
 
     func refreshReplyCards() async {
@@ -207,6 +210,21 @@ final class StudioStore {
         } catch {
             note(error)
         }
+    }
+
+    func refreshSettings() async {
+        guard !session.isDemo else { return }
+        do {
+            settings = try await session.api.settings()
+        } catch {
+            note(error)
+        }
+    }
+
+    /// 換手門檻 — the studio's configured value, falling back to the server
+    /// default when settings have not loaded yet.
+    var handoverFraction: Double {
+        settings.handoverFraction ?? 0.75
     }
 
     // MARK: - Chat

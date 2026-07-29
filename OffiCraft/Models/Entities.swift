@@ -236,6 +236,9 @@ struct OutsourceWorker: Codable, Identifiable, Hashable {
     /// The roster shows the bound task's type; the API gives us the title only,
     /// so callers cross-reference the task list when they need `type_key`.
     var displayName: String { codename }
+
+    /// `context_pct` is 0..100 on the wire, same as MonitorSession.
+    var contextFraction: Double? { contextPct.map { $0 / 100 } }
 }
 
 // MARK: - Chat
@@ -328,6 +331,25 @@ struct MonitorSnapshot: Codable, Hashable {
     var accounts: [MonitorAccount] = []
     var machines: [MonitorMachine] = []
     var sessions: [MonitorSession] = []
+
+    init(accounts: [MonitorAccount] = [],
+         machines: [MonitorMachine] = [],
+         sessions: [MonitorSession] = []) {
+        self.accounts = accounts
+        self.machines = machines
+        self.sessions = sessions
+    }
+
+    /// Swift does not fall back to a property's default value for an absent
+    /// key, so the synthesised decoder would throw on a payload missing any of
+    /// the three lists and blank the entire monitor screen. Each list is
+    /// decoded independently instead: one bad section costs that section only.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = (try? container.decode([MonitorAccount].self, forKey: .accounts)) ?? []
+        machines = (try? container.decode([MonitorMachine].self, forKey: .machines)) ?? []
+        sessions = (try? container.decode([MonitorSession].self, forKey: .sessions)) ?? []
+    }
 }
 
 // MARK: - Counts
@@ -365,16 +387,6 @@ struct ServerVersion: Codable {
 }
 
 // MARK: - Settings
-
-struct StudioSettings: Codable, Hashable {
-    var orgName: String?
-    var ownerName: String?
-    /// 換手門檻 — context percentage that triggers an automatic handover.
-    var handoverThreshold: Double?
-    /// 登入有效期 in days.
-    var sessionDays: Int?
-    var theme: String?
-}
 
 // MARK: - Loose JSON
 

@@ -21,6 +21,7 @@ swiftc -O \
   "$ROOT/OffiCraft/Design/SVGPath.swift" \
   "$ROOT/OffiCraft/Design/Formatters.swift" \
   "$ROOT/OffiCraft/Models/UsageWindow.swift" \
+  "$ROOT/OffiCraft/Models/StudioSettings.swift" \
   -o "$OUT/logic-tests"
 
 "$OUT/logic-tests"

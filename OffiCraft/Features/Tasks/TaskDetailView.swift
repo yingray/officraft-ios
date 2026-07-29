@@ -212,6 +212,8 @@ struct TaskDetailView: View {
                         openCard = CardRoute(id: cardId)
                     } onAnswer: { cardId, optionIdx in
                         Task { await answer(cardId: cardId, optionIdx: optionIdx) }
+                    } onOpenAttachment: { attachment, siblings in
+                        preview = previewTarget(for: attachment, in: siblings)
                     }
                 }
             }
@@ -316,6 +318,7 @@ private struct StepCard: View {
     let step: TaskStep
     var onOpenCard: (String) -> Void
     var onAnswer: (String, Int) -> Void
+    var onOpenAttachment: (Attachment, [Attachment]) -> Void
 
     @Environment(StudioStore.self) private var store
     @State private var card: ReplyCard?
@@ -429,6 +432,14 @@ private struct StepCard: View {
                 .foregroundStyle(OC.label)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // The card's own attachments — often the very thing the decision
+            // is made from, so they must be reachable without leaving the task.
+            if let attachments = card.attachments, !attachments.isEmpty {
+                AttachmentStrip(attachments: attachments, compact: true) { attachment in
+                    onOpenAttachment(attachment, attachments)
+                }
+            }
 
             ForEach(Array((card.options ?? []).enumerated()), id: \.offset) { index, option in
                 ReplyOptionRow(index: index, text: option,

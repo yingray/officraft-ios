@@ -79,11 +79,12 @@ struct MoreView: View {
     }
 
     private var ownerName: String {
-        session.isDemo ? DemoData.ownerName : "Owner"
+        store.settings.ownerDisplayName ?? (session.isDemo ? DemoData.ownerName : "Owner")
     }
 
     private var studioName: String {
-        session.isDemo ? DemoData.studioName : (session.activeHost?.display ?? "OffiCraft")
+        store.settings.studioName
+            ?? (session.isDemo ? DemoData.studioName : (session.activeHost?.display ?? "OffiCraft"))
     }
 
     private var notificationsSection: some View {
@@ -141,10 +142,11 @@ struct MoreView: View {
         }
     }
 
-    /// "7 天 · 75%" — session lifetime and the automatic-handover threshold.
+    /// "7 天 · 75%" — session lifetime and the automatic-handover threshold,
+    /// both read from the studio's own settings.
     private var tuningSummary: String {
-        let threshold = session.isDemo ? DemoData.handoverThreshold : 0.75
-        return "7 天 · \(OCFormat.percent(threshold))"
+        let days = store.settings.sessionDays ?? 7
+        return "\(days) 天 · \(OCFormat.percent(store.handoverFraction))"
     }
 
     private var demoNotice: some View {

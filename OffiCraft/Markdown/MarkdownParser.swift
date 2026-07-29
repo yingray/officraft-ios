@@ -112,6 +112,9 @@ enum MarkdownParser {
                 while index < lines.count {
                     let candidate = lines[index].trimmingCharacters(in: .whitespaces)
                     guard candidate.contains("|"), !candidate.isEmpty else { break }
+                    // A bullet or heading that happens to contain a pipe is the
+                    // next block, not another row.
+                    guard !startsBlock(candidate) else { break }
                     rows.append(splitRow(candidate))
                     index += 1
                 }
@@ -277,10 +280,15 @@ enum MarkdownParser {
         return MarkdownBlock.AlertKind(rawValue: raw.uppercased())
     }
 
-    /// A table starts where a pipe-bearing line is followed by a delimiter row.
+    /// A table starts where a pipe-bearing line is followed by a delimiter row
+    /// with the same number of cells. GFM requires the counts to match, and
+    /// without that check a prose line containing a pipe followed by anything
+    /// dash-shaped gets torn out of its paragraph and promoted to a header.
     private static func isTableStart(_ lines: [String], _ index: Int) -> Bool {
         guard index + 1 < lines.count else { return false }
-        return lines[index].contains("|") && isTableDelimiter(lines[index + 1])
+        let header = lines[index]
+        guard header.contains("|"), isTableDelimiter(lines[index + 1]) else { return false }
+        return splitRow(header).count == splitRow(lines[index + 1]).count
     }
 
     /// Reads `:---` / `:---:` / `---:` out of the delimiter row.

@@ -350,15 +350,22 @@ struct TableBlock: View {
             .font(.system(size: 12.5, weight: isHeader ? .bold : .regular))
             .foregroundStyle(isHeader ? OC.labelSecondary : OC.labelBody)
             .multilineTextAlignment(textAlignment(column))
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
+            // One line per cell, deliberately. The enclosing ScrollView
+            // proposes unbounded width, so anything that wraps would be
+            // measured for one line and then laid out taller, spilling into
+            // the neighbouring rows. A long value widens the table instead and
+            // the reader scrolls — which is what the interaction rules allow
+            // tables to do.
+            .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+            // maxHeight fills the row so the header tint has no vertical gaps:
+            // a cell frame constrains width only, and a short label would
+            // otherwise sit centred with untinted bands above and below.
             .frame(minWidth: column == 0 ? 96 : 66,
-                   maxWidth: 260,
+                   maxHeight: .infinity,
                    alignment: frameAlignment(column))
-            // The header tint has to sit on the cell: GridRow takes no
-            // background of its own.
+            // The tint has to sit on the cell — GridRow takes no background.
             .background(isHeader ? OC.label.opacity(0.04) : Color.clear)
     }
 }

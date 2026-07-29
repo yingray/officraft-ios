@@ -190,6 +190,55 @@ let notTable = MarkdownParser.parse("| --- | --- |")
 check("delimiter row alone is not a table",
       !notTable.contains { if case .table = $0 { return true }; return false })
 
+// A prose line with a pipe, followed by something dash-shaped that does NOT
+// have matching cell counts, must stay prose.
+let pipeProse = MarkdownParser.parse("""
+first line of a paragraph
+second line has a | pipe
+| - |
+third line
+""")
+check("mismatched delimiter does not promote prose to a table",
+      !pipeProse.contains { if case .table = $0 { return true }; return false },
+      "got \(pipeProse)")
+
+// A table must not swallow the block that follows it.
+let afterTable = MarkdownParser.parse("""
+| k | v |
+| --- | --- |
+| a | 1 |
+- 項目一 | 帶 pipe
+- 項目二
+""")
+check("table stops at the next block",
+      tableBlocks("""
+| k | v |
+| --- | --- |
+| a | 1 |
+- 項目一 | 帶 pipe
+- 項目二
+""").first?.rows.count == 1,
+      "got \(String(describing: tableBlocks("""
+| k | v |
+| --- | --- |
+| a | 1 |
+- 項目一 | 帶 pipe
+- 項目二
+""").first?.rows))")
+check("…and the list survives",
+      afterTable.contains { if case .bulletList(let items) = $0 { return items.count == 2 }; return false },
+      "got \(afterTable)")
+
+// Matching cell counts SHOULD still interrupt a paragraph (GFM allows it).
+let legitInterrupt = tableBlocks("""
+說明文字
+| a | b |
+| --- | --- |
+| 1 | 2 |
+""")
+check("a well-formed table still interrupts a paragraph", legitInterrupt.count == 1,
+      "got \(legitInterrupt.count)")
+
 // MARK: - Usage window decoding
 
 print("\nusage window (wire shape)")
@@ -230,6 +279,50 @@ check("unexpected resets_at shape degrades to nil, does not throw",
 let legacy = decodeWindow(#"{"pct":0.86,"used":10,"limit":100,"label":"Max 20x"}"#)
 check("the invented keys are gone", legacy?.usedPct == nil,
       "got \(String(describing: legacy?.usedPct))")
+
+// MARK: - Studio settings (wire shape)
+
+print("\nstudio settings (wire shape)")
+
+func decodeSettings(_ json: String) -> StudioSettings? {
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try? decoder.decode(StudioSettings.self, from: Data(json.utf8))
+}
+
+// The real settingsDTO from server/ocserverd/wire.go.
+let settings = decodeSettings("""
+{"token_ttl":604800,"handover_pct":75,"codex_compaction_threshold":3,
+ "outsource_max_parallel":5,"updater_receive_beta":false,"updater_auto_update":true,
+ "org_name":"Hardcore Studio","owner_name":"Seth","push_contact_email":"",
+ "display_theme":"office","display_language":"zh-Hant","display_wide":false}
+""")
+check("real settings keys decode", settings?.handoverPct == 75 && settings?.tokenTtl == 604800,
+      "got \(String(describing: settings))")
+check("handover threshold as a fraction", settings?.handoverFraction == 0.75,
+      "got \(String(describing: settings?.handoverFraction))")
+check("token ttl becomes whole days", settings?.sessionDays == 7,
+      "got \(String(describing: settings?.sessionDays))")
+check("studio name read", settings?.studioName == "Hardcore Studio")
+check("owner name read", settings?.ownerName == "Seth")
+
+// "" is the server's "never set" sentinel — it must not surface as a name.
+let unset = decodeSettings(#"{"org_name":"","owner_name":"","display_theme":""}"#)
+check("empty org name reads as unset", unset?.studioName == nil,
+      "got \(String(describing: unset?.studioName))")
+check("empty owner name reads as unset", unset?.ownerDisplayName == nil)
+
+// A partial payload must not throw — the settings surface grows over time.
+let partial = decodeSettings(#"{"handover_pct":60}"#)
+check("partial settings decode", partial?.handoverPct == 60 && partial?.tokenTtl == nil,
+      "got \(String(describing: partial))")
+check("…and the fallbacks hold", partial?.sessionDays == nil)
+
+// The invented keys must not resolve.
+let invented = decodeSettings(#"{"handover_threshold":0.75,"session_days":7,"theme":"office"}"#)
+check("the invented settings keys are gone",
+      invented?.handoverPct == nil && invented?.tokenTtl == nil,
+      "got \(String(describing: invented))")
 
 // MARK: - SVG path parser
 

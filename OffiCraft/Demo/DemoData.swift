@@ -134,6 +134,7 @@ enum DemoData {
             summary: "首頁的 hero 要不要改成雙欄？",
             body: "雙欄能一次帶到價值主張與截圖，但手機上會被迫壓縮成單欄。",
             options: ["改成雙欄", "保持單欄，改壓縮上下留白"],
+            attachments: [usageChart, measureReport],
             answer: ReplyCardAnswer(optionIdx: 1, text: nil),
             createdTs: hoursAgo(2.4),
             answeredTs: hoursAgo(1.9)
@@ -352,6 +353,10 @@ enum DemoData {
     static let kyleThread: [ChatMessage] = [
         ChatMessage(id: "msg-kyle-1", from: ownerId, to: "m-kyle",
                     body: "先量現況再決定，把數據貼在卡上", ts: hoursAgo(1.2)),
+        ChatMessage(id: "msg-kyle-own-2", from: ownerId, to: "m-kyle",
+                    body: "這是上次那份上線計畫，順便對一下回滾點。",
+                    ts: hoursAgo(1.1),
+                    attachments: [rolloutPlan, usageChart, accountsShot]),
         ChatMessage(id: "msg-kyle-2", from: "m-kyle", to: ownerId,
                     body: measureResultMarkdown, ts: minutesAgo(58),
                     attachments: [measureReport]),
@@ -419,8 +424,17 @@ enum DemoData {
         ]
     )
 
-    /// The console's automatic-handover threshold, shown next to memory usage.
-    static let handoverThreshold: Double = 0.75
+    /// The studio settings, in the server's own shape.
+    static let settings = StudioSettings(
+        tokenTtl: 7 * 86_400,
+        handoverPct: 75,
+        codexCompactionThreshold: 3,
+        outsourceMaxParallel: 5,
+        orgName: studioName,
+        ownerName: ownerName,
+        displayTheme: "office",
+        displayLanguage: "zh-Hant"
+    )
 
     // MARK: - Long-form bodies
 

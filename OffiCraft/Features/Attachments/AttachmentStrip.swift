@@ -17,18 +17,16 @@ struct AttachmentStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             if !images.isEmpty {
-                HStack(spacing: 9) {
-                    ForEach(images.prefix(3)) { attachment in
+                // Wraps rather than overflowing: three 104pt thumbnails do not
+                // fit a chat bubble, and tables and code are the only blocks
+                // allowed to scroll sideways.
+                FlowLayout(spacing: 9, lineSpacing: 9) {
+                    ForEach(images) { attachment in
                         Button { onOpen(attachment) } label: {
                             ImageThumbnail(attachment: attachment, compact: compact)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("圖片 \(attachment.filename)")
-                    }
-                    if images.count > 3 {
-                        Text("+\(images.count - 3)")
-                            .font(.ocFootnote)
-                            .foregroundStyle(OC.labelTertiary)
                     }
                 }
             }

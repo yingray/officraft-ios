@@ -56,9 +56,32 @@ struct AsksView: View {
         .navigationDestination(item: $openTask) { route in
             TaskDetailView(taskId: route.id)
         }
-        // The preview presenter is the only sheet-class modifier on the root;
-        // the compose sheet and the expire dialog ride on the list instead.
         .attachmentPreview($preview, author: previewAuthor, timestamp: nil)
+        // These live on the root, not on `list`: `list` switches between an
+        // empty-state ScrollView and a List, and a modifier attached inside
+        // that branch is torn down the moment an SSE refresh empties the
+        // inbox — taking an open sheet with it.
+        .sheet(item: $writeOwnFor) { card in
+            WriteOwnAnswerSheet(card: card)
+        }
+        .confirmationDialog(
+            "把這張請示標為過期？",
+            isPresented: Binding(
+                get: { expireCandidate != nil },
+                set: { if !$0 { expireCandidate = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("標為過期", role: .destructive) {
+                if let card = expireCandidate {
+                    Task { await store.expire(card: card) }
+                }
+                expireCandidate = nil
+            }
+            Button("取消", role: .cancel) { expireCandidate = nil }
+        } message: {
+            Text("過期不算回答，成員會視情況重開一張新的。")
+        }
         .refreshable { await store.refreshReplyCards() }
     }
 
@@ -102,27 +125,6 @@ struct AsksView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 0)
-            .sheet(item: $writeOwnFor) { card in
-                WriteOwnAnswerSheet(card: card)
-            }
-            .confirmationDialog(
-                "把這張請示標為過期？",
-                isPresented: Binding(
-                    get: { expireCandidate != nil },
-                    set: { if !$0 { expireCandidate = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("標為過期", role: .destructive) {
-                    if let card = expireCandidate {
-                        Task { await store.expire(card: card) }
-                    }
-                    expireCandidate = nil
-                }
-                Button("取消", role: .cancel) { expireCandidate = nil }
-            } message: {
-                Text("過期不算回答，成員會視情況重開一張新的。")
-            }
         }
     }
 

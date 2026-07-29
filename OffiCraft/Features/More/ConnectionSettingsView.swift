@@ -3,6 +3,7 @@ import SwiftUI
 /// 設定 · 連線與安全 — change host, test it, rotate the password.
 struct ConnectionSettingsView: View {
     @Environment(AppSession.self) private var session
+    @Environment(StudioStore.self) private var store
 
     @State private var isTesting = false
     @State private var showHostSwitcher = false
@@ -97,7 +98,7 @@ struct ConnectionSettingsView: View {
             }, action: { showChangePassword = true })
 
             GroupedRow(title: "登入有效期", trailing: {
-                RowValue(text: "7 天", showsChevron: false)
+                RowValue(text: "\(store.settings.sessionDays ?? 7) 天", showsChevron: false)
             })
 
             GroupedRow(title: "登出這台裝置",

@@ -7,7 +7,6 @@ import SwiftUI
 /// account overheating" and "is a session about to hand over".
 struct MonitorView: View {
     @Environment(StudioStore.self) private var store
-    @Environment(AppSession.self) private var session
 
     @State private var tab: Tab = .accounts
 
@@ -81,10 +80,9 @@ struct MonitorView: View {
         .navigationBarHidden(true)
     }
 
-    /// The automatic-handover threshold the session meters are read against.
-    private var handoverThreshold: Double {
-        session.isDemo ? DemoData.handoverThreshold : 0.75
-    }
+    /// The automatic-handover threshold the session meters are read against —
+    /// the studio's own setting, not a hardcoded guess.
+    private var handoverThreshold: Double { store.handoverFraction }
 
     private func isOutsource(_ agentSession: MonitorSession) -> Bool {
         store.outsourceWorkers.contains {
