@@ -627,6 +627,49 @@ check("Chinese is estimated taller than the same count of latin",
       ChatMessageClamp.estimatedHeight(of: String(repeating: "中", count: 40))
           > ChatMessageClamp.estimatedHeight(of: String(repeating: "a", count: 40)))
 
+// MARK: - Group unread dot
+
+print("\nroster group unread")
+
+check("no unread member leaves the tab clean", !RosterUnread.groupHasUnread([0, 0, 0]))
+check("one unread member lights the tab", RosterUnread.groupHasUnread([0, 3, 0]))
+check("an empty group leaves the tab clean", !RosterUnread.groupHasUnread([]))
+// The dot reads the whole group. Searching narrows the visible rows down to the
+// read ones, and the tab must keep its dot anyway.
+let wholeGroup = [0, 2, 0]
+let searchedSubset = [0]
+check("the dot survives a search that hides the unread row",
+      RosterUnread.groupHasUnread(wholeGroup) && !RosterUnread.groupHasUnread(searchedSubset))
+
+// MARK: - Reply card colour
+
+print("\nreply card tone")
+
+check("answered turns the card green", ReplyCardTone(statusRaw: "answered") == .answered)
+check("waiting keeps the card amber", ReplyCardTone(statusRaw: "waiting") == .waiting)
+// A card id with no status projected must stay amber — going grey would read as
+// "nothing to do here" on a card still waiting for an answer.
+check("no projected status keeps the card amber", ReplyCardTone(statusRaw: nil) == .waiting)
+check("expired greys the card out", ReplyCardTone(statusRaw: "expired") == .inactive)
+check("an unknown status greys the card out", ReplyCardTone(statusRaw: "sleeping") == .inactive)
+// Pin the literal "unknown" too, not just an arbitrary unrecognised word. The
+// decoder collapses every value it cannot read to `ReplyCardStatus.unknown`, so
+// "unknown" is the ONLY string the labelled surfaces ever feed for that case —
+// asserting on "sleeping" alone left `AskDetailView` and `SplitRootView` free to
+// turn amber-with-「—」 without a single check going red.
+check("the literal unknown wire value greys out", ReplyCardTone(statusRaw: "unknown") == .inactive)
+
+// The chat 請示 block has no status label, so grey there reads as "nothing to
+// do" rather than "unknown". Anything the build cannot read must stay amber.
+check("the unlabelled block keeps an unknown status amber",
+      ReplyCardTone.forUnlabelledBlock(statusRaw: "unknown") == .waiting)
+check("the unlabelled block keeps an empty status amber",
+      ReplyCardTone.forUnlabelledBlock(statusRaw: "") == .waiting)
+check("the unlabelled block keeps a status a future build adds amber",
+      ReplyCardTone.forUnlabelledBlock(statusRaw: "revoked") == .waiting)
+check("the unlabelled block still greys an expired card out",
+      ReplyCardTone.forUnlabelledBlock(statusRaw: "expired") == .inactive)
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

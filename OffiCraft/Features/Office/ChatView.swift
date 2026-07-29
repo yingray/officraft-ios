@@ -403,8 +403,19 @@ private struct MessageRow: View {
     var onOpenAttachment: (Attachment) -> Void
     var onOpenCard: (String) -> Void
 
-    /// A card announcement gets the amber outline, so the eye lands on it.
+    /// A card announcement gets an outline, so the eye lands on it.
     private var isCardAnnouncement: Bool { message.replyCardId != nil }
+
+    /// The block wears the card's current status: amber while it waits, green
+    /// once the owner answered. The status is a read-time join on the wire, so
+    /// it is only as fresh as the last thread load.
+    ///
+    /// There is no status label in this block, so the colour carries the whole
+    /// message — hence the unlabelled fallback, which keeps an unusable status
+    /// amber instead of grey.
+    private var cardTone: ReplyCardTone {
+        .forUnlabelledBlock(statusRaw: message.replyCardStatus?.rawValue)
+    }
 
     var body: some View {
         HStack {
@@ -477,7 +488,7 @@ private struct MessageRow: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .strokeBorder(
-                                isCardAnnouncement ? OC.waitingBorder
+                                isCardAnnouncement ? cardTone.border
                                     : (isHighlighted ? OC.accentBorder : .clear),
                                 lineWidth: 1
                             )
@@ -488,7 +499,7 @@ private struct MessageRow: View {
 
     private var cardAnnouncementHeader: some View {
         HStack(spacing: 8) {
-            SolidChip(text: "請示", tint: OC.waiting)
+            SolidChip(text: "請示", tint: cardTone.tint)
             Spacer()
             Button {
                 if let cardId = message.replyCardId { onOpenCard(cardId) }

@@ -181,11 +181,26 @@ enum ReplyCardStatus: String, Codable, Hashable {
         }
     }
 
+    var tone: ReplyCardTone { ReplyCardTone(statusRaw: rawValue) }
+
+    var tint: Color { tone.tint }
+}
+
+extension ReplyCardTone {
     var tint: Color {
         switch self {
         case .waiting: return OC.waiting
         case .answered: return OC.success
-        case .expired, .unknown: return OC.labelTertiary
+        case .inactive: return OC.labelTertiary
+        }
+    }
+
+    /// Outline for a card-shaped block.
+    var border: Color {
+        switch self {
+        case .waiting: return OC.waitingBorder
+        case .answered: return OC.successBorder
+        case .inactive: return OC.hairline
         }
     }
 }

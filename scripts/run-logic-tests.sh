@@ -22,6 +22,8 @@ swiftc -O \
   "$ROOT/OffiCraft/Design/Formatters.swift" \
   "$ROOT/OffiCraft/Models/UsageWindow.swift" \
   "$ROOT/OffiCraft/Models/StudioSettings.swift" \
+  "$ROOT/OffiCraft/Models/ReplyCardTone.swift" \
+  "$ROOT/OffiCraft/Features/Office/RosterUnread.swift" \
   "$ROOT/OffiCraft/Features/Asks/AskOptionLayout.swift" \
   "$ROOT/OffiCraft/Features/Office/ChatLane.swift" \
   "$ROOT/OffiCraft/Features/Office/ChatMessageClamp.swift" \

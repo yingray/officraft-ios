@@ -597,6 +597,17 @@ final class StudioStore {
             cardDetails.removeAll()
             await refreshReplyCards()
             await refreshTasks()
+            // The 請示 block in a chat carries the card status, and the server
+            // publishes no `chat` delta when a card is answered — so an open
+            // thread would keep showing the old colour until it reloads.
+            // This is for a card answered from somewhere ELSE while the owner
+            // sits in the chat: the 助理 answering over MCP, another device, or
+            // the expiry sweep. Answering from the 請示 tab does not need it —
+            // that pane replaces the chat on both layouts, so the thread is
+            // reloaded on the way back anyway.
+            if let peer = activeThreadPeer {
+                await loadThread(with: peer)
+            }
         case .task, .taskManual:
             taskDetails.removeAll()
             await refreshTasks()

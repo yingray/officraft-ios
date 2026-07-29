@@ -172,6 +172,9 @@ struct SegmentedTabs<Value: Hashable>: View {
     struct Item: Identifiable {
         let value: Value
         let title: String
+        /// Unread inside the group this tab stands for, so the dot is findable
+        /// from the tab the owner is not on.
+        var hasUnread: Bool = false
         var id: Value { value }
     }
 
@@ -185,15 +188,20 @@ struct SegmentedTabs<Value: Hashable>: View {
                 Button {
                     withAnimation(.snappy(duration: 0.18)) { selection = item.value }
                 } label: {
-                    Text(item.title)
-                        .font(isSelected ? .system(size: 13.5, weight: .semibold) : .system(size: 13.5))
-                        .foregroundStyle(isSelected ? OC.label : OC.labelTertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(isSelected ? OC.surface2 : .clear)
-                        )
+                    HStack(spacing: 5) {
+                        Text(item.title)
+                            .font(isSelected ? .system(size: 13.5, weight: .semibold) : .system(size: 13.5))
+                            .foregroundStyle(isSelected ? OC.label : OC.labelTertiary)
+                        if item.hasUnread {
+                            UnreadDot(size: 7)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(isSelected ? OC.surface2 : .clear)
+                    )
                 }
                 .buttonStyle(.plain)
             }

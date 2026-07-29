@@ -30,6 +30,16 @@ struct OfficeView: View {
         }
     }
 
+    // The tab dots read the whole group, not the filtered lists above — the
+    // same collections the tab counts come from.
+    private var membersHaveUnread: Bool {
+        RosterUnread.groupHasUnread(store.activeMembers.map(\.unreadCount))
+    }
+
+    private var workersHaveUnread: Bool {
+        RosterUnread.groupHasUnread(store.outsourceWorkers.map(\.unreadCount))
+    }
+
     /// 外包 shows "in use / capacity", matching the console's roster header.
     private var busyWorkers: Int {
         store.outsourceWorkers.filter { $0.taskId?.isEmpty == false }.count
@@ -54,9 +64,11 @@ struct OfficeView: View {
 
             SegmentedTabs(
                 items: [
-                    .init(value: Tab.members, title: "正職 \(store.activeMembers.count)"),
+                    .init(value: Tab.members, title: "正職 \(store.activeMembers.count)",
+                          hasUnread: membersHaveUnread),
                     .init(value: Tab.outsource,
-                          title: "外包 \(busyWorkers) / \(max(store.outsourceWorkers.count, busyWorkers))"),
+                          title: "外包 \(busyWorkers) / \(max(store.outsourceWorkers.count, busyWorkers))",
+                          hasUnread: workersHaveUnread),
                 ],
                 selection: $tab
             )

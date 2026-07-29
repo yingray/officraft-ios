@@ -75,6 +75,9 @@ enum OC {
     static let overheat = dyn(light: 0xC0503F, dark: 0xE8705F)
     /// 已回覆 tick.
     static let success = dyn(light: 0x2E7D3A, dark: 0x6FBF73)
+    /// Card outline once the owner has answered — the green twin of
+    /// `waitingBorder`.
+    static let successBorder = dyn(light: 0x2E7D3A, dark: 0x6FBF73, lightAlpha: 0.35, darkAlpha: 0.42)
     /// Context / memory usage meter.
     static let memory = dyn(light: 0x3B6FD4, dark: 0x6EA8FE)
 
