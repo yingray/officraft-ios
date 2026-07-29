@@ -500,6 +500,32 @@ let long = Array(repeating: ChatLane.system, count: 7)
 check("7 system rows are one run",
       ChatLane.runs(of: long) == [ChatLaneRun(lane: .system, start: 0, count: 7)])
 
+// A forced break splits a run even when the lane does not change. This is what
+// keeps a day separator from being swallowed by a run that spans midnight.
+let sameLane = Array(repeating: ChatLane.direct, count: 4)
+let atMidnight = [false, false, true, false]
+let broken = ChatLane.runs(of: sameLane, breaks: atMidnight)
+check("a forced break splits one lane into two runs", broken.count == 2, "got \(broken.count)")
+check("break run 0", broken[0] == ChatLaneRun(lane: .direct, start: 0, count: 2))
+check("break run 1", broken[1] == ChatLaneRun(lane: .direct, start: 2, count: 2))
+check("breaks still cover every index",
+      broken.flatMap { Array($0.range) } == Array(0..<4))
+// A break at index 0 is meaningless — a run already starts there.
+check("a break at 0 changes nothing",
+      ChatLane.runs(of: sameLane, breaks: [true, false, false, false])
+          == [ChatLaneRun(lane: .direct, start: 0, count: 4)])
+// A short breaks array must not crash or silently split.
+check("a shorter breaks array is tolerated",
+      ChatLane.runs(of: sameLane, breaks: [false, false])
+          == [ChatLaneRun(lane: .direct, start: 0, count: 4)])
+// Breaks and lane changes compose.
+check("break plus lane change",
+      ChatLane.runs(of: [.direct, .direct, .system, .system],
+                    breaks: [false, false, false, true])
+          == [ChatLaneRun(lane: .direct, start: 0, count: 2),
+              ChatLaneRun(lane: .system, start: 2, count: 1),
+              ChatLaneRun(lane: .system, start: 3, count: 1)])
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

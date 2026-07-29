@@ -48,14 +48,30 @@ struct EventFrame: Decodable {
 /// followed by a full refetch, which is exactly what the contract asks for.
 actor EventStream {
     /// Emitted for each delta; the app maps topics to refetches.
-    private var continuation: AsyncStream<EventFrame>.Continuation?
+    ///
+    /// Built in `init`, not on the first `frames()` call. The connection is
+    /// opened from `AppSession` as soon as there is a token, while the consumer
+    /// only starts iterating once the store loads — anything that arrived in
+    /// between used to be yielded into a nil continuation and silently dropped.
+    private let stream: AsyncStream<EventFrame>
+    private let continuation: AsyncStream<EventFrame>.Continuation
     private var task: Task<Void, Never>?
     private var session: URLSession
+
+    /// Whether a connection is currently open. Surfaced so the app can say
+    /// "live" or "not live" instead of leaving a dead stream looking healthy.
+    private(set) var isConnected = false
 
     /// Fired whenever the stream (re)connects, so callers can full-resync.
     private var onReconnect: (@Sendable () -> Void)?
 
     init() {
+        // Buffered, so a burst while the consumer is busy refetching is queued
+        // rather than dropped. Newest wins if it ever overflows.
+        (stream, continuation) = AsyncStream.makeStream(
+            of: EventFrame.self,
+            bufferingPolicy: .bufferingNewest(256)
+        )
         let config = URLSessionConfiguration.default
         // A stream that is quiet for 15s still sends `: heartbeat`, so a
         // generous read timeout with no overall limit is the right shape.
@@ -65,11 +81,7 @@ actor EventStream {
         session = URLSession(configuration: config)
     }
 
-    func frames() -> AsyncStream<EventFrame> {
-        AsyncStream { continuation in
-            self.continuation = continuation
-        }
-    }
+    func frames() -> AsyncStream<EventFrame> { stream }
 
     func setReconnectHandler(_ handler: @escaping @Sendable () -> Void) {
         onReconnect = handler
@@ -85,12 +97,12 @@ actor EventStream {
     func disconnect() {
         task?.cancel()
         task = nil
+        isConnected = false
     }
 
     func finish() {
         disconnect()
-        continuation?.finish()
-        continuation = nil
+        continuation.finish()
     }
 
     // MARK: - Loop
@@ -113,8 +125,15 @@ actor EventStream {
     }
 
     private func stream(host: ServerHost, token: String) async throws {
-        guard let base = host.baseURL,
-              let url = URL(string: base.absoluteString + "/api/events") else {
+        // Same trailing-slash guard the REST client uses. Without it a host
+        // typed as "127.0.0.1:7755/" produced ".../api/events" with a doubled
+        // slash — the server 404s it, this loop retries forever, and the app
+        // looks perfectly healthy while nothing ever updates live.
+        guard let base = host.baseURL else { throw APIError.badHost(host.raw) }
+        let absolute = base.absoluteString.hasSuffix("/")
+            ? String(base.absoluteString.dropLast())
+            : base.absoluteString
+        guard let url = URL(string: absolute + "/api/events") else {
             throw APIError.badHost(host.raw)
         }
         var request = URLRequest(url: url)
@@ -123,9 +142,21 @@ actor EventStream {
         request.timeoutInterval = 90
 
         let (bytes, response) = try await session.bytes(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 {
-            throw APIError.unauthorized
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw APIError.unauthorized
+            }
+            // Anything else non-2xx has to throw so the caller backs off. It
+            // used to fall through: a 404 body yields no frames, the loop sees
+            // a clean end of stream, resets the backoff to one second and
+            // reconnects immediately — a silent hammer on a broken URL.
+            guard (200..<300).contains(http.statusCode) else {
+                throw APIError.server(status: http.statusCode, code: nil, message: nil)
+            }
         }
+
+        isConnected = true
+        defer { isConnected = false }
 
         // Connected — the caller resyncs now, because there is no replay.
         onReconnect?()
@@ -144,7 +175,7 @@ actor EventStream {
                       let frame = try? decoder.decode(EventFrame.self, from: payload) else {
                     continue
                 }
-                continuation?.yield(frame)
+                continuation.yield(frame)
             } else if line.hasPrefix(":") {
                 // `: connected` / `: heartbeat` — liveness only.
                 continue

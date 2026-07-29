@@ -105,6 +105,11 @@ final class StudioStore {
         }
         isLoading = true
         defer { isLoading = false }
+        // Before the refetches, not after: the connection is already open by
+        // now, so a delta landing during this load would otherwise have nobody
+        // iterating. This load *is* the resync the reconnect handler asks for,
+        // so registering it late costs nothing.
+        startListening()
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.refreshReplyCards() }
             group.addTask { await self.refreshTasks() }
@@ -112,7 +117,6 @@ final class StudioStore {
             group.addTask { await self.refreshMonitoring() }
             group.addTask { await self.refreshSettings() }
         }
-        startListening()
     }
 
     private func loadDemo() {

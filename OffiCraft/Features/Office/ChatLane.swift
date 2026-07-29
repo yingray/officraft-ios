@@ -63,13 +63,21 @@ extension ChatLane {
     /// Only neighbours merge. Two inter-agent exchanges with the owner's own
     /// reply between them stay two separate folds — merging across would move
     /// messages past each other in time, which is a worse lie than an extra row.
-    static func runs(of lanes: [ChatLane]) -> [ChatLaneRun] {
+    ///
+    /// `breaks[i] == true` forces a run to start at `i` even when the lane is
+    /// unchanged. The transcript uses it for midnight: a run is the unit the day
+    /// separator is decided on, so a run that spanned two days would swallow the
+    /// second day's header — and a collapsed run cannot show a divider inside
+    /// itself at all.
+    static func runs(of lanes: [ChatLane], breaks: [Bool] = []) -> [ChatLaneRun] {
         var runs: [ChatLaneRun] = []
         var index = 0
         while index < lanes.count {
             let lane = lanes[index]
             var length = 1
-            while index + length < lanes.count, lanes[index + length] == lane {
+            while index + length < lanes.count,
+                  lanes[index + length] == lane,
+                  !(breaks.indices.contains(index + length) && breaks[index + length]) {
                 length += 1
             }
             runs.append(ChatLaneRun(lane: lane, start: index, count: length))

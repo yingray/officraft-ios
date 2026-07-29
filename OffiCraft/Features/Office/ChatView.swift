@@ -14,7 +14,6 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft = ""
-    @State private var markdownPreview = false
     @State private var preview: PreviewTarget?
     @State private var previewAuthor = ""
     @State private var previewTimestamp: Date?
@@ -26,6 +25,9 @@ struct ChatView: View {
     /// Folded runs the owner has opened, keyed by their first message id.
     /// Empty by design: inter-agent chatter and handover notices start closed.
     @State private var expandedRuns: Set<String> = []
+    /// Whether the transcript has already been placed once. Guards the
+    /// highlight jump so it happens on the first load and never again.
+    @State private var didAnchor = false
 
     private var messages: [ChatMessage] { store.messages(with: peerId) }
 
@@ -37,6 +39,7 @@ struct ChatView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
+        .swipeBackEnabled()
         .navigationDestination(item: $openCard) { route in
             AskDetailView(cardId: route.id)
         }
@@ -71,10 +74,19 @@ struct ChatView: View {
                         .font(.ocCalloutEmphasised)
                         .foregroundStyle(OC.label)
                         .lineLimit(1)
-                    Text(statusLine)
-                        .font(.ocCaption)
-                        .foregroundStyle(OC.labelTertiary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        // A real dot, tinted by presence. It used to be a "●"
+                        // baked into the status string, which inherited the
+                        // caption's grey and so read "offline" even for a
+                        // member who was online.
+                        if let presence = peerPresence {
+                            PresenceDot(presence: presence, size: 6)
+                        }
+                        Text(statusLine)
+                            .font(.ocCaption)
+                            .foregroundStyle(OC.labelTertiary)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -93,12 +105,16 @@ struct ChatView: View {
         }
     }
 
+    private var peerPresence: Presence? {
+        if let member = store.members.first(where: { $0.id == peerId }) { return member.presence }
+        if let worker = store.outsourceWorkers.first(where: { $0.id == peerId }) { return worker.presence }
+        return nil
+    }
+
     private var statusLine: String {
         var parts: [String] = []
-        if let member = store.members.first(where: { $0.id == peerId }) {
-            parts.append("● \(member.presence.label)")
-        } else if let worker = store.outsourceWorkers.first(where: { $0.id == peerId }) {
-            parts.append("● \(worker.presence.label)")
+        if let presence = peerPresence {
+            parts.append(presence.label)
         }
         if let taskNo = store.currentTaskNo(for: peerId) {
             parts.append("進行中 #\(taskNo)")
@@ -133,18 +149,24 @@ struct ChatView: View {
     /// other, and the agent-to-agent and system stretches folded out of it.
     private var runs: [ResolvedRun] {
         let all = messages
+        let calendar = Calendar.current
         let lanes = all.map {
             ChatLane.classify(from: $0.from, to: $0.to, ownerId: session.ownerId)
         }
-        return ChatLane.runs(of: lanes).map { run in
+        // A run must never span two days: the separator is decided per run, and
+        // a collapsed run has no inside to put one in. Breaking at midnight
+        // keeps every day's header — a plain owner↔peer thread is one long
+        // .direct lane, so without this a multi-day history showed only the
+        // first day's date and nothing after it.
+        let dayBreaks = all.indices.map { index in
+            index > 0 && !calendar.isDate(all[index].sentAt,
+                                          inSameDayAs: all[index - 1].sentAt)
+        }
+        return ChatLane.runs(of: lanes, breaks: dayBreaks).map { run in
             ResolvedRun(
                 lane: run.lane,
                 messages: Array(all[run.range]),
-                // Same rule as before: a separator whenever this run opens a new
-                // day relative to the message immediately before it.
-                showsDaySeparator: run.start == 0
-                    || !Calendar.current.isDate(all[run.start].sentAt,
-                                                inSameDayAs: all[run.start - 1].sentAt)
+                showsDaySeparator: run.start == 0 || dayBreaks[run.start]
             )
         }
     }
@@ -171,22 +193,33 @@ struct ChatView: View {
                 .padding(.bottom, 10)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: messages.count) {
-                guard let anchor = bottomAnchorId else { return }
-                withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
-            }
-            .task {
-                // Arriving from a reply card must land on the message that
-                // announced it — including when it sits inside a folded run,
-                // which would otherwise not be in the hierarchy to scroll to.
-                if let highlightMessageId {
-                    expandRun(containing: highlightMessageId)
-                    proxy.scrollTo(highlightMessageId, anchor: .center)
-                } else if let anchor = bottomAnchorId {
-                    proxy.scrollTo(anchor, anchor: .bottom)
-                }
+            // Driven by the message list, not by appear. On a first visit the
+            // thread is still being fetched when this view appears, so anything
+            // that reads `messages` at that moment sees an empty array — which
+            // is why arriving from a reply card used to land at the bottom
+            // instead of on the message it named.
+            .onChange(of: messages.count, initial: true) {
+                guard !messages.isEmpty else { return }
+                settle(proxy)
             }
         }
+    }
+
+    /// Puts the transcript where it should be: on the anchored message the first
+    /// time the thread has content, at the bottom on every later change.
+    private func settle(_ proxy: ScrollViewProxy) {
+        if let highlightMessageId, !didAnchor {
+            didAnchor = true
+            expandRun(containing: highlightMessageId)
+            // The fold has to be open before the target exists to scroll to.
+            DispatchQueue.main.async {
+                proxy.scrollTo(highlightMessageId, anchor: .center)
+            }
+            return
+        }
+        didAnchor = true
+        guard let anchor = bottomAnchorId else { return }
+        withAnimation(.smooth) { proxy.scrollTo(anchor, anchor: .bottom) }
     }
 
     /// The id to scroll to for "the bottom". A collapsed run hides its messages,
@@ -195,10 +228,15 @@ struct ChatView: View {
     private var bottomAnchorId: String? {
         guard let last = runs.last else { return nil }
         if last.lane.isFolded, !expandedRuns.contains(last.id) {
-            return last.id
+            return foldRowId(last)
         }
         return last.messages.last?.id
     }
+
+    /// The fold header's scroll id. Prefixed because the run is keyed by its
+    /// first message, and stamping that same string on both the header and the
+    /// first bubble would put two views under one id in the scroll namespace.
+    private func foldRowId(_ run: ResolvedRun) -> String { "fold-\(run.id)" }
 
     private func expandRun(containing messageId: String) {
         guard let run = runs.first(where: { run in
@@ -221,7 +259,7 @@ struct ChatView: View {
                     if isExpanded { expandedRuns.remove(key) } else { expandedRuns.insert(key) }
                 }
             }
-            .id(key)
+            .id(foldRowId(run))
 
             if isExpanded {
                 ChatFoldedBody(lane: run.lane) {
@@ -283,22 +321,6 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
-            if markdownPreview, !draft.isEmpty {
-                ScrollView {
-                    MarkdownView(draft, scale: .message)
-                        .padding(12)
-                }
-                .frame(maxHeight: 180)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(OC.surface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(OC.accentBorder, lineWidth: 1)
-                        )
-                )
-            }
-
             composerBar
         }
         .padding(.horizontal, OCMetrics.screenPadding)
@@ -318,12 +340,13 @@ struct ChatView: View {
     }
 
     private var composerBar: some View {
+        // No markdown preview here: what the owner writes back is a short
+        // reply, not a document. The agents are the ones that send rich
+        // markdown, and that still renders in the transcript.
         Composer(
                 text: $draft,
                 placeholder: "訊息…",
                 accentSend: true,
-                showsMarkdownToggle: true,
-                markdownPreview: $markdownPreview,
                 attachments: $pending,
                 onPickPhotos: { isPickingPhotos = true },
                 onPickFiles: { isPickingFiles = true }
@@ -332,7 +355,6 @@ struct ChatView: View {
                 let files = pending
                 draft = ""
                 pending = []
-                markdownPreview = false
                 Task { await store.send(body, to: peerId, attachments: files) }
             }
     }

@@ -86,6 +86,7 @@ struct AskDetailView: View {
         }
         .background(OC.bg)
         .navigationBarHidden(true)
+        .swipeBackEnabled()
         .navigationDestination(item: $openTask) { route in
             TaskDetailView(taskId: route.id)
         }

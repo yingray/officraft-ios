@@ -598,6 +598,28 @@ extension Composer {
             onSend: onSend
         )
     }
+
+    /// Convenience for a composer with attachments but no markdown toggle —
+    /// chat, where the owner writes a short reply rather than a document.
+    init(text: Binding<String>,
+         placeholder: String,
+         accentSend: Bool = true,
+         attachments: Binding<[PendingAttachment]>,
+         onPickPhotos: (() -> Void)? = nil,
+         onPickFiles: (() -> Void)? = nil,
+         onSend: @escaping () -> Void) {
+        self.init(
+            text: text,
+            placeholder: placeholder,
+            accentSend: accentSend,
+            showsMarkdownToggle: false,
+            markdownPreview: .constant(false),
+            attachments: attachments,
+            onPickPhotos: onPickPhotos,
+            onPickFiles: onPickFiles,
+            onSend: onSend
+        )
+    }
 }
 
 // MARK: - Misc
