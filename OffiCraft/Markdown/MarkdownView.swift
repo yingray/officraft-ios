@@ -343,13 +343,16 @@ struct TableBlock: View {
                     }
                 }
             }
-            // Hold the grid at its natural width. Offered less than that — any
-            // table wider than the screen — Grid compresses the columns, and a
-            // cell then draws narrower than it was measured at, wraps an extra
-            // line and spills past the row height already allocated. That is
-            // what cut the last row off. The scroll view is here to carry the
-            // overflow, so refuse the squeeze and let it scroll.
-            .fixedSize(horizontal: true, vertical: false)
+            // Hold the grid at its natural size on both axes. Offered less than
+            // that, Grid compresses: squeezed horizontally — any table wider
+            // than the screen — a cell draws narrower than it was measured at,
+            // wraps an extra line and spills past its row, which cut the last
+            // row off; squeezed vertically — any table taller than what is left
+            // on screen — it takes the height out of the most flexible row,
+            // which is the header, and the header text spills out of its tint.
+            // Both scroll views are here to carry the overflow, so refuse the
+            // squeeze and let them scroll.
+            .fixedSize()
         }
         // A table that already fits must not rubber-band, or every one of them
         // reads as scrollable.
