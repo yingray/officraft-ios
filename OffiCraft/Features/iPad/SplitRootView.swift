@@ -211,7 +211,7 @@ private struct AskListColumn: View {
             SegmentedTabs(
                 items: [
                     .init(value: Tab.waiting, title: "待回覆 \(store.waitingCardCount)"),
-                    .init(value: Tab.handled, title: "已處理 \(store.cardCounts.answered)"),
+                    .init(value: Tab.handled, title: "已處理 \(store.handledCardCount)"),
                 ],
                 selection: $tab
             )
@@ -238,7 +238,7 @@ private struct AskListColumn: View {
         .task(id: tab) {
             if tab == .handled { await store.refreshHandledCards() }
         }
-        .onChange(of: store.cardCounts.answered) {
+        .onChange(of: store.replyCardRevision) {
             if tab == .handled { Task { await store.refreshHandledCards() } }
         }
     }

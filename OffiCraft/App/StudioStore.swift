@@ -16,6 +16,11 @@ final class StudioStore {
     private(set) var waitingCards: [ReplyCard] = []
     private(set) var handledCards: [ReplyCard] = []
     private(set) var cardCounts = ReplyCardCounts()
+    /// Advances for every reply-card invalidation, including deltas whose
+    /// aggregate counts do not change.
+    private(set) var replyCardRevision: UInt64 = 0
+    /// The revision represented by `handledCards`; nil until its first load.
+    private var handledCardsLoadedRevision: UInt64?
     /// Full bodies fetched on demand for the single-card screen.
     private(set) var cardDetails: [String: ReplyCard] = [:]
 
@@ -68,6 +73,22 @@ final class StudioStore {
 
     /// The reply-card badge on the tab bar and the iPad sidebar.
     var waitingCardCount: Int { max(cardCounts.waiting, waitingCards.count) }
+
+    /// Number of rows the handled pane shows (or will show when first opened).
+    ///
+    /// A stale or not-yet-loaded pane uses the count endpoint, capped by the
+    /// same limits as its two list requests. A current pane uses the rows that
+    /// actually arrived.
+    var handledCardCount: Int {
+        let loadedCount = handledCardsLoadedRevision == replyCardRevision
+            ? handledCards.count
+            : nil
+        return HandledReplyCardsPolicy.badgeCount(
+            answeredTotal: cardCounts.answered,
+            expiredTotal: cardCounts.expired,
+            loadedCount: loadedCount
+        )
+    }
 
     func displayName(for id: String) -> String {
         // Server-authored rows carry a synthetic sender that is not on the
@@ -126,6 +147,7 @@ final class StudioStore {
     private func loadDemo() {
         waitingCards = DemoData.replyCards.filter { $0.status == .waiting }
         handledCards = DemoData.replyCards.filter { $0.status != .waiting }
+        handledCardsLoadedRevision = replyCardRevision
         cardCounts = DemoData.replyCardCounts
         cardDetails = Dictionary(uniqueKeysWithValues: DemoData.replyCards.map { ($0.id, $0) })
         tasks = DemoData.tasks
@@ -182,14 +204,25 @@ final class StudioStore {
     func refreshHandledCards() async {
         guard !session.isDemo else { return }
 
-        async let answered = session.api.replyCards(status: .answered, limit: 20)
-        async let expired = session.api.replyCards(status: .expired, limit: 10)
+        let requestedRevision = replyCardRevision
+        async let answered = session.api.replyCards(
+            status: .answered,
+            limit: HandledReplyCardsPolicy.answeredFetchLimit
+        )
+        async let expired = session.api.replyCards(
+            status: .expired,
+            limit: HandledReplyCardsPolicy.expiredFetchLimit
+        )
 
         do {
             let handled = try await (answered + expired)
+            // A newer delta landed while these requests were in flight. Its
+            // refresh owns the result; do not make this older snapshot current.
+            guard requestedRevision == replyCardRevision else { return }
             handledCards = handled.sorted {
                 ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
             }
+            handledCardsLoadedRevision = requestedRevision
         } catch {
             note(error)
         }
@@ -416,6 +449,10 @@ final class StudioStore {
                 optionIdx: Int?,
                 text: String?,
                 attachments: [PendingAttachment] = []) async {
+        // A previously loaded handled pane can already be at its fetch cap.
+        // Mark it stale before the optimistic insert so its badge does not
+        // briefly claim that an over-cap row would be fetched.
+        if !session.isDemo { invalidateReplyCards() }
         let removed = waitingCards
         waitingCards.removeAll { $0.id == card.id }
         cardCounts.waiting = max(0, cardCounts.waiting - 1)
@@ -448,6 +485,7 @@ final class StudioStore {
 
     /// 標為過期 — the left-swipe action, always behind a confirmation.
     func expire(card: ReplyCard) async {
+        if !session.isDemo { invalidateReplyCards() }
         let removed = waitingCards
         waitingCards.removeAll { $0.id == card.id }
         var expired = card
@@ -585,6 +623,7 @@ final class StudioStore {
         // run a second, serial copy of the load already in flight. Skip it
         // until the first load has actually happened.
         guard hasLoadedOnce else { return }
+        invalidateReplyCards()
         await refreshReplyCards()
         await refreshTasks()
         await refreshOffice()
@@ -594,6 +633,7 @@ final class StudioStore {
     private func apply(_ frame: EventFrame) async {
         switch frame.topic {
         case .replyCard:
+            invalidateReplyCards()
             cardDetails.removeAll()
             await refreshReplyCards()
             await refreshTasks()
@@ -624,6 +664,10 @@ final class StudioStore {
         case .globalContext, .roleDef, .lessons, .unknown:
             break
         }
+    }
+
+    private func invalidateReplyCards() {
+        replyCardRevision = HandledReplyCardsPolicy.nextRevision(after: replyCardRevision)
     }
 
     /// Set by the chat screen so incoming deltas refresh the visible thread.

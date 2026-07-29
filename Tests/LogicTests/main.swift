@@ -670,6 +670,62 @@ check("the unlabelled block keeps a status a future build adds amber",
 check("the unlabelled block still greys an expired card out",
       ReplyCardTone.forUnlabelledBlock(statusRaw: "expired") == .inactive)
 
+// MARK: - Handled reply cards
+
+print("\nhandled reply cards")
+
+check("answered count respects its fetch cap",
+      HandledReplyCardsPolicy.badgeCount(answeredTotal: 99, expiredTotal: 0) == 20)
+check("expired count respects its fetch cap",
+      HandledReplyCardsPolicy.badgeCount(answeredTotal: 0, expiredTotal: 99) == 10)
+check("mixed count includes answered and expired",
+      HandledReplyCardsPolicy.badgeCount(answeredTotal: 12, expiredTotal: 7) == 19)
+check("mixed count respects both fetch caps",
+      HandledReplyCardsPolicy.badgeCount(answeredTotal: 99, expiredTotal: 99) == 30)
+check("a loaded pane reports the rows that actually arrived",
+      HandledReplyCardsPolicy.badgeCount(
+          answeredTotal: 99,
+          expiredTotal: 99,
+          loadedCount: 18
+      ) == 18)
+
+let replyCardRevisions = (0..<3).reduce(into: [UInt64(0)]) { revisions, _ in
+    revisions.append(HandledReplyCardsPolicy.nextRevision(after: revisions.last!))
+}
+check("each reply-card invalidation advances the revision",
+      replyCardRevisions == [0, 1, 2, 3],
+      "got \(replyCardRevisions)")
+check("the revision still changes when it wraps",
+      HandledReplyCardsPolicy.nextRevision(after: .max) == 0)
+
+// The no-SDK harness cannot compile StudioStore or the SwiftUI views. Keep a
+// narrow source-level contract for the production wiring so the pure policy
+// tests cannot stay green after somebody disconnects that policy from the app.
+let repositoryRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+
+func sourceFile(_ relativePath: String) -> String {
+    let url = repositoryRoot.appendingPathComponent(relativePath)
+    return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+}
+
+let studioStoreSource = sourceFile("OffiCraft/App/StudioStore.swift")
+let asksViewSource = sourceFile("OffiCraft/Features/Asks/AsksView.swift")
+let splitRootViewSource = sourceFile("OffiCraft/Features/iPad/SplitRootView.swift")
+
+check("reply-card SSE invalidates the handled snapshot",
+      studioStoreSource.contains("case .replyCard:\n            invalidateReplyCards()"))
+check("iPhone handled pane observes reply-card revision",
+      asksViewSource.contains(".onChange(of: store.replyCardRevision)"))
+check("iPad handled pane observes reply-card revision",
+      splitRootViewSource.contains(".onChange(of: store.replyCardRevision)"))
+check("iPhone handled pane no longer observes answered totals",
+      !asksViewSource.contains(".onChange(of: store.cardCounts.answered)"))
+check("iPad handled pane no longer observes answered totals",
+      !splitRootViewSource.contains(".onChange(of: store.cardCounts.answered)"))
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

@@ -26,7 +26,7 @@ struct AsksView: View {
             SegmentedTabs(
                 items: [
                     .init(value: Tab.waiting, title: "待回覆 \(store.waitingCardCount)"),
-                    .init(value: Tab.handled, title: "近期已處理 \(store.cardCounts.answered)"),
+                    .init(value: Tab.handled, title: "近期已處理 \(store.handledCardCount)"),
                 ],
                 selection: $tab
             )
@@ -90,9 +90,9 @@ struct AsksView: View {
         .task(id: tab) {
             if tab == .handled { await store.refreshHandledCards() }
         }
-        // A card answered elsewhere moves the count; while this pane is open,
-        // that is the signal to re-read it.
-        .onChange(of: store.cardCounts.answered) {
+        // Every reply-card delta advances the revision, including expired-only
+        // changes and replacements that leave the aggregate totals unchanged.
+        .onChange(of: store.replyCardRevision) {
             if tab == .handled { Task { await store.refreshHandledCards() } }
         }
         .refreshable { await refresh() }
