@@ -11,6 +11,8 @@ struct SplitRootView: View {
     @Environment(AppSession.self) private var session
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var columnVisibilityBeforeDetailOnly: NavigationSplitViewVisibility = .all
+    @State private var visibilityRequestGeneration = 0
     @State private var selectedCardId: String?
     @State private var selectedTaskId: String?
     @State private var selectedPeerId: String?
@@ -21,7 +23,7 @@ struct SplitRootView: View {
         } content: {
             middleColumn
         } detail: {
-            NavigationStack { detailColumn }
+            detailPane
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -36,6 +38,22 @@ struct SplitRootView: View {
                     .font(.ocCalloutEmphasised)
                     .foregroundStyle(OC.label)
                     .lineLimit(1)
+                Spacer(minLength: 4)
+                Button {
+                    requestColumnVisibility(.doubleColumn)
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(OC.labelSecondary)
+                        .frame(
+                            minWidth: OCMetrics.minTapTarget,
+                            minHeight: OCMetrics.minTapTarget
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("收合側邊欄")
+                .accessibilityHint("隱藏最左欄，保留清單與明細")
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 14)
@@ -149,9 +167,141 @@ struct SplitRootView: View {
             }
         }
         .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 380)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if columnVisibility != .all {
+                HStack {
+                    Button {
+                        requestColumnVisibility(.all)
+                    } label: {
+                        Label("顯示側邊欄", systemImage: "sidebar.left")
+                            .font(.ocSubhead.weight(.semibold))
+                            .foregroundStyle(OC.accent)
+                            .frame(minHeight: OCMetrics.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("顯示側邊欄")
+                    .accessibilityHint("還原最左欄")
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .background(OC.bg)
+                .overlay(alignment: .bottom) { Hairline() }
+            }
+        }
     }
 
     // MARK: Detail
+
+    private var detailPane: some View {
+        VStack(spacing: 0) {
+            if hasSelectedDetail {
+                HStack {
+                    Spacer()
+                    Button {
+                        if columnVisibility == .detailOnly {
+                            exitDetailOnly()
+                        } else {
+                            enterDetailOnly()
+                        }
+                    } label: {
+                        Label(
+                            columnVisibility == .detailOnly ? "退出全螢幕" : "全螢幕",
+                            systemImage: columnVisibility == .detailOnly
+                                ? "arrow.down.right.and.arrow.up.left"
+                                : "arrow.up.left.and.arrow.down.right"
+                        )
+                        .font(.ocSubhead.weight(.semibold))
+                        .foregroundStyle(OC.accent)
+                        .frame(minHeight: OCMetrics.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        columnVisibility == .detailOnly ? "退出明細全螢幕" : "展開明細全螢幕"
+                    )
+                    .accessibilityHint(
+                        columnVisibility == .detailOnly
+                            ? "還原進入全螢幕前的欄位"
+                            : "暫時隱藏側邊欄與清單"
+                    )
+                }
+                .padding(.horizontal, 16)
+                .background(OC.bg)
+                .overlay(alignment: .bottom) { Hairline() }
+            }
+
+            // Key the whole detail stack, not each destination's loading task.
+            // The selection owns this lifetime; column visibility does not, so
+            // entering and leaving full screen preserves the current content.
+            NavigationStack { detailColumn }
+                .id(detailIdentity)
+        }
+        .background(OC.bg)
+        .onChange(of: hasSelectedDetail) { _, hasSelectedDetail in
+            if !hasSelectedDetail, columnVisibility == .detailOnly {
+                exitDetailOnly()
+            }
+        }
+    }
+
+    private func enterDetailOnly() {
+        columnVisibilityBeforeDetailOnly =
+            columnVisibility == .doubleColumn ? .doubleColumn : .all
+        requestColumnVisibility(.detailOnly)
+    }
+
+    private func exitDetailOnly() {
+        let requestGeneration = beginVisibilityRequest()
+        guard columnVisibilityBeforeDetailOnly == .all else {
+            columnVisibility = .doubleColumn
+            return
+        }
+
+        // NavigationSplitView normalizes a single detail-only → all write to
+        // double-column. Give each native value its own render pass, then
+        // reassert all without waiting for a framework callback.
+        columnVisibility = .doubleColumn
+        Task { @MainActor in
+            await Task.yield()
+            await Task.yield()
+            guard requestGeneration == visibilityRequestGeneration else { return }
+            columnVisibility = .all
+        }
+    }
+
+    private func requestColumnVisibility(_ visibility: NavigationSplitViewVisibility) {
+        beginVisibilityRequest()
+        columnVisibility = visibility
+    }
+
+    @discardableResult
+    private func beginVisibilityRequest() -> Int {
+        visibilityRequestGeneration &+= 1
+        return visibilityRequestGeneration
+    }
+
+    private var hasSelectedDetail: Bool {
+        switch section {
+        case .asks: return selectedCardId != nil
+        case .tasks: return selectedTaskId != nil
+        case .office: return selectedPeerId != nil
+        case .monitor, .more: return false
+        }
+    }
+
+    private var detailIdentity: IPadSplitDetailIdentity {
+        switch section {
+        case .asks:
+            return IPadSplitDetailIdentity(kind: .ask, itemID: selectedCardId)
+        case .tasks:
+            return IPadSplitDetailIdentity(kind: .task, itemID: selectedTaskId)
+        case .office:
+            return IPadSplitDetailIdentity(kind: .peer, itemID: selectedPeerId)
+        case .monitor:
+            return IPadSplitDetailIdentity(kind: .monitor, itemID: nil)
+        case .more:
+            return IPadSplitDetailIdentity(kind: .more, itemID: nil)
+        }
+    }
 
     @ViewBuilder
     private var detailColumn: some View {

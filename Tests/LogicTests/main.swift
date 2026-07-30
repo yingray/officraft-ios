@@ -726,6 +726,77 @@ check("iPhone handled pane no longer observes answered totals",
 check("iPad handled pane no longer observes answered totals",
       !splitRootViewSource.contains(".onChange(of: store.cardCounts.answered)"))
 
+// MARK: - iPad split navigation
+
+print("\niPad split navigation")
+
+check("iPad uses a direct native column visibility binding",
+      splitRootViewSource.contains(
+          "@State private var columnVisibility: NavigationSplitViewVisibility = .all"
+      )
+          && splitRootViewSource.contains(
+              "NavigationSplitView(columnVisibility: $columnVisibility)"
+          )
+          && !splitRootViewSource.contains(
+              "private var columnVisibility: Binding<NavigationSplitViewVisibility>"
+          ))
+check("iPad snapshots all versus double before entering detail-only",
+      splitRootViewSource.contains(
+          "@State private var columnVisibilityBeforeDetailOnly: "
+              + "NavigationSplitViewVisibility = .all"
+      )
+          && splitRootViewSource.contains(
+              "columnVisibility == .doubleColumn ? .doubleColumn : .all"
+          )
+          && splitRootViewSource.contains("requestColumnVisibility(.detailOnly)"))
+check("iPad restores all columns in two view-driven render passes",
+      splitRootViewSource.contains(
+          "guard columnVisibilityBeforeDetailOnly == .all else"
+      )
+          && splitRootViewSource.contains(
+              "columnVisibility = .doubleColumn\n        Task { @MainActor in"
+          )
+          && splitRootViewSource.components(
+              separatedBy: "await Task.yield()"
+          ).count == 3
+          && splitRootViewSource.contains("columnVisibility = .all"))
+check("iPad cancels a stale deferred all-column restoration",
+      splitRootViewSource.contains("@State private var visibilityRequestGeneration = 0")
+          && splitRootViewSource.contains("visibilityRequestGeneration &+= 1")
+          && splitRootViewSource.contains(
+              "guard requestGeneration == visibilityRequestGeneration else { return }"
+          )
+          && splitRootViewSource.contains(
+              "private func requestColumnVisibility("
+          ))
+check("iPad sidebar controls write native visibility directly",
+      splitRootViewSource.contains("requestColumnVisibility(.doubleColumn)")
+          && splitRootViewSource.contains("requestColumnVisibility(.all)"))
+
+let consecutiveAskSelections = ["rc-1", "rc-2", "rc-3"].map {
+    IPadSplitDetailIdentity(kind: .ask, itemID: $0)
+}
+check("three consecutive selections have three detail identities",
+      Set(consecutiveAskSelections).count == 3)
+check("iPad detail stack is keyed by its selection identity",
+      splitRootViewSource.contains(
+          "NavigationStack { detailColumn }\n                .id(detailIdentity)"
+      ))
+check("iPad maps all three selected IDs into detail identity",
+      splitRootViewSource.contains(
+          "IPadSplitDetailIdentity(kind: .ask, itemID: selectedCardId)"
+      )
+          && splitRootViewSource.contains(
+              "IPadSplitDetailIdentity(kind: .task, itemID: selectedTaskId)"
+          )
+          && splitRootViewSource.contains(
+              "IPadSplitDetailIdentity(kind: .peer, itemID: selectedPeerId)"
+          ))
+check("iPad full-screen controls are gated on selected detail",
+      splitRootViewSource.contains("if hasSelectedDetail")
+          && splitRootViewSource.contains("enterDetailOnly()")
+          && splitRootViewSource.contains("exitDetailOnly()"))
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")
