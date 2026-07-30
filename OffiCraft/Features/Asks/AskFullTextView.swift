@@ -281,8 +281,13 @@ struct AskOptionsFullScreenView: View {
                         ReplyOptionRow(index: index, text: option,
                                        isRecommended: index == 0,
                                        wrapsFully: true) {
+                            // No dismiss here: the caller stages a
+                            // confirmation, and the dialog lives in THIS
+                            // screen's context — closing now takes the dialog
+                            // down with it and nothing is ever sent. The caller
+                            // closes this screen once the send is confirmed, so
+                            // cancelling leaves the owner on the option list.
                             onAnswer(index)
-                            dismiss()
                         }
                     }
                 }

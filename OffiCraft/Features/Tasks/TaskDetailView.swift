@@ -15,6 +15,8 @@ struct TaskDetailView: View {
     @State private var preview: PreviewTarget?
     @State private var didSendMessage = false
     @State private var isTracking = false
+    /// A tapped gate option waiting to be confirmed — same guard as the inbox.
+    @State private var pendingAnswer: PendingAnswer?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +60,9 @@ struct TaskDetailView: View {
         .background(OC.bg)
         .navigationBarHidden(true)
         .swipeBackEnabled()
+        .answerConfirmation($pendingAnswer) { pending in
+            Task { await send(pending) }
+        }
         .navigationDestination(item: $openCard) { route in
             AskDetailView(cardId: route.id)
         }
@@ -211,8 +216,8 @@ struct TaskDetailView: View {
                     TimelineNode(tint: step.status.nodeTint, isLast: index == steps.count - 1)
                     StepCard(step: step) { cardId in
                         openCard = CardRoute(id: cardId)
-                    } onAnswer: { cardId, optionIdx in
-                        Task { await answer(cardId: cardId, optionIdx: optionIdx) }
+                    } onAnswer: { card, optionIdx in
+                        pendingAnswer = PendingAnswer(card: card, optionIdx: optionIdx)
                     } onOpenAttachment: { attachment, siblings in
                         preview = previewTarget(for: attachment, in: siblings)
                     }
@@ -221,9 +226,10 @@ struct TaskDetailView: View {
         }
     }
 
-    private func answer(cardId: String, optionIdx: Int) async {
-        guard let card = await store.loadCardDetail(cardId) else { return }
-        await store.answer(card: card, optionIdx: optionIdx, text: nil)
+    private func send(_ pending: PendingAnswer) async {
+        await store.answer(card: pending.card,
+                           optionIdx: pending.optionIdx,
+                           text: nil)
         detail = await store.loadTaskDetail(taskId)
     }
 
@@ -318,7 +324,7 @@ private struct TimelineNode: View {
 private struct StepCard: View {
     let step: TaskStep
     var onOpenCard: (String) -> Void
-    var onAnswer: (String, Int) -> Void
+    var onAnswer: (ReplyCard, Int) -> Void
     var onOpenAttachment: (Attachment, [Attachment]) -> Void
 
     @Environment(StudioStore.self) private var store
@@ -445,7 +451,7 @@ private struct StepCard: View {
             ForEach(Array((card.options ?? []).enumerated()), id: \.offset) { index, option in
                 ReplyOptionRow(index: index, text: option,
                                isRecommended: index == 0, isCompact: true) {
-                    onAnswer(card.id, index)
+                    onAnswer(card, index)
                 }
             }
         }

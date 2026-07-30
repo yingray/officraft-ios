@@ -22,6 +22,11 @@ struct AskDetailView: View {
     @State private var openPeer: PeerRoute?
     @State private var showFullText = false
     @State private var showAllOptions = false
+    /// A tapped option waiting to be confirmed. Two of them because a dialog
+    /// belongs to the context it is presented from: one for this screen, one for
+    /// the all-options cover on top of it.
+    @State private var pendingAnswer: PendingAnswer?
+    @State private var pendingAnswerInCover: PendingAnswer?
 
     /// Position within the waiting queue, shown as "1 / 3".
     private var queuePosition: (index: Int, total: Int)? {
@@ -107,18 +112,33 @@ struct AskDetailView: View {
         .fullScreenCover(isPresented: $showAllOptions) {
             if let card {
                 AskOptionsFullScreenView(card: card) { index in
-                    answer(card, optionIdx: index)
+                    pendingAnswerInCover = PendingAnswer(card: card, optionIdx: index)
+                }
+                .answerConfirmation($pendingAnswerInCover) { pending in
+                    showAllOptions = false
+                    send(pending)
                 }
             }
+        }
+        .answerConfirmation($pendingAnswer) { pending in
+            send(pending)
         }
         .task {
             card = await store.loadCardDetail(cardId)
         }
     }
 
+    /// Staging, not sending: an option tap now asks first (see
+    /// `PendingAnswer`). The send itself is `send(_:)`.
     private func answer(_ card: ReplyCard, optionIdx: Int) {
+        pendingAnswer = PendingAnswer(card: card, optionIdx: optionIdx)
+    }
+
+    private func send(_ pending: PendingAnswer) {
         Task {
-            await store.answer(card: card, optionIdx: optionIdx, text: nil)
+            await store.answer(card: pending.card,
+                               optionIdx: pending.optionIdx,
+                               text: nil)
             dismiss()
         }
     }

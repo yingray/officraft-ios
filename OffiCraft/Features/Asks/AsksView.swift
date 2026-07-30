@@ -14,6 +14,11 @@ struct AsksView: View {
     @State private var preview: PreviewTarget?
     @State private var previewAuthorId: String?
     @State private var allOptionsFor: ReplyCard?
+    /// A tapped option waiting to be confirmed. Two of them because a dialog
+    /// belongs to the context it is presented from: one for the inbox list, one
+    /// for the all-options cover on top of it.
+    @State private var pendingAnswer: PendingAnswer?
+    @State private var pendingAnswerInCover: PendingAnswer?
 
     private enum Tab: Hashable { case waiting, handled }
 
@@ -62,8 +67,15 @@ struct AsksView: View {
         }
         .fullScreenCover(item: $allOptionsFor) { card in
             AskOptionsFullScreenView(card: card) { index in
-                Task { await store.answer(card: card, optionIdx: index, text: nil) }
+                pendingAnswerInCover = PendingAnswer(card: card, optionIdx: index)
             }
+            .answerConfirmation($pendingAnswerInCover) { pending in
+                allOptionsFor = nil
+                Task { await send(pending) }
+            }
+        }
+        .answerConfirmation($pendingAnswer) { pending in
+            Task { await send(pending) }
         }
         .confirmationDialog(
             "把這張請示標為過期？",
@@ -96,6 +108,12 @@ struct AsksView: View {
             if tab == .handled { Task { await store.refreshHandledCards() } }
         }
         .refreshable { await refresh() }
+    }
+
+    /// Every confirmed option goes out through here, so the send and the guard
+    /// stay one step apart and cannot drift.
+    private func send(_ pending: PendingAnswer) async {
+        await store.answer(card: pending.card, optionIdx: pending.optionIdx, text: nil)
     }
 
     private func refresh() async {
@@ -152,7 +170,7 @@ struct AsksView: View {
             AskCardView(
                 card: card,
                 onAnswer: { index in
-                    Task { await store.answer(card: card, optionIdx: index, text: nil) }
+                    pendingAnswer = PendingAnswer(card: card, optionIdx: index)
                 },
                 onOpenDetail: { openCard = card },
                 onWriteOwn: { writeOwnFor = card },

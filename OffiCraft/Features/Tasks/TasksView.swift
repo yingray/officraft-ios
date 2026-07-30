@@ -166,6 +166,9 @@ struct TasksView: View {
 
     /// The waiting card bound to this task's gate step, if the detail is loaded;
     /// otherwise fall back to matching by task id on the inbox.
+    ///
+    /// The inbox is newest-first, so a task holding more than one waiting card
+    /// resolves to its most recent one — the likelier current gate.
     private func blockingCardId(for task: TaskSummary) -> String? {
         if let detail = store.taskDetails[task.id],
            let step = detail.orderedSteps.first(where: { $0.status == .waitingOwner }),

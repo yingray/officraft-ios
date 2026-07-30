@@ -720,6 +720,73 @@ func sourceFile(_ relativePath: String) -> String {
     return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
 }
 
+/// Source with its comments removed, and with string literals blanked first.
+///
+/// Two lessons, both from mutants that passed: a source-level check that reads
+/// comments can be defeated by one (a `// was: …` line above a direct send kept
+/// the check green), and a naive comment stripper reads the `//` inside
+/// "https://…" as the start of a comment and eats the rest of the line — which
+/// is enough to hide a send.
+func withoutComments(_ source: String) -> String {
+    var blanked = ""
+    var inString = false
+    var escaped = false
+    for character in source {
+        if escaped { escaped = false; if !inString { blanked.append(character) }; continue }
+        if character == "\\" && inString { escaped = true; continue }
+        if character == "\"" { inString.toggle(); blanked.append("\""); continue }
+        if character == "\n" { inString = false }
+        blanked.append(inString ? " " : character)
+    }
+
+    var out = ""
+    var rest = Substring(blanked)
+    while true {
+        let line = rest.range(of: "//")
+        let block = rest.range(of: "/*")
+        // Whichever opener comes FIRST — asking about "//" first would leave a
+        // block comment unstripped whenever any line comment follows it.
+        guard let opener = [line, block]
+            .compactMap({ $0 })
+            .min(by: { $0.lowerBound < $1.lowerBound })
+        else { break }
+        out += rest[rest.startIndex..<opener.lowerBound]
+        if rest[opener] == "//" {
+            rest = rest[(rest[opener.upperBound...].firstIndex(of: "\n") ?? rest.endIndex)...]
+        } else if let close = rest[opener.upperBound...].range(of: "*/") {
+            rest = rest[close.upperBound...]
+        } else {
+            rest = rest[rest.endIndex...]
+        }
+    }
+    return out + rest
+}
+
+/// Source with every run of whitespace collapsed to a single space.
+///
+/// The checks below are about structure, not layout: `dismiss()` on the next
+/// line and `dismiss()` on the same line are the same bug, and a call wrapped
+/// to fit the column limit is the same call. Both of those beat the first
+/// version of these checks.
+func squashed(_ source: String) -> String {
+    source.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+}
+
+/// Every Swift file under a directory, so a check can ask "which files do X"
+/// instead of naming the files it already knows about.
+func swiftSources(under relativePath: String) -> [(name: String, body: String)] {
+    let root = repositoryRoot.appendingPathComponent(relativePath)
+    guard let walker = FileManager.default.enumerator(
+        at: root, includingPropertiesForKeys: nil
+    ) else { return [] }
+    return walker.compactMap { entry in
+        guard let url = entry as? URL, url.pathExtension == "swift",
+              let body = try? String(contentsOf: url, encoding: .utf8)
+        else { return nil }
+        return (url.lastPathComponent, squashed(withoutComments(body)))
+    }
+}
+
 let studioStoreSource = sourceFile("OffiCraft/App/StudioStore.swift")
 let asksViewSource = sourceFile("OffiCraft/Features/Asks/AsksView.swift")
 let splitRootViewSource = sourceFile("OffiCraft/Features/iPad/SplitRootView.swift")
@@ -881,6 +948,182 @@ check("iPad full-screen controls are gated on selected detail",
       splitRootViewSource.contains("if hasSelectedDetail")
           && splitRootViewSource.contains("enterDetailOnly()")
           && splitRootViewSource.contains("exitDetailOnly()"))
+
+// MARK: - Ask pane order
+
+print("\nask pane order")
+
+// Tuples stand in for cards: the entity types need the iOS SDK, the rule does
+// not.
+let orderSample = [
+    (ts: 100.0, id: "rc-a"),
+    (ts: 300.0, id: "rc-b"),
+    (ts: 200.0, id: "rc-c"),
+]
+
+check("the newest card leads the pane",
+      ReplyCardOrder.newestFirst(orderSample) { $0 }.map(\.id)
+          == ["rc-b", "rc-c", "rc-a"])
+check("an older card never outranks a newer one",
+      ReplyCardOrder.newestFirst([(ts: 1.0, id: "rc-old"), (ts: 2.0, id: "rc-new")]) { $0 }
+          .first?.id == "rc-new")
+
+// Same timestamp, opposite input order: without the id tiebreak these two can
+// come back differently on consecutive refreshes and the list twitches.
+let tied = [(ts: 5.0, id: "rc-x"), (ts: 5.0, id: "rc-y")]
+check("cards sharing a timestamp keep one stable order",
+      ReplyCardOrder.newestFirst(tied) { $0 }.map(\.id)
+          == ReplyCardOrder.newestFirst(tied.reversed()) { $0 }.map(\.id))
+
+// The keys decide which timestamp each pane actually reads, so they carry the
+// part of the rule a comparator test cannot see.
+check("待回覆 orders on when the card was opened",
+      ReplyCardOrder.waitingKey(createdTs: 42, id: "rc-a").ts == 42)
+check("近期已處理 prefers the answered moment",
+      ReplyCardOrder.handledKey(answeredTs: 900, expiredTs: 100, id: "rc-a").ts
+          == 900)
+check("an expired card falls back to when it expired",
+      ReplyCardOrder.handledKey(answeredTs: nil, expiredTs: 100, id: "rc-a").ts
+          == 100)
+check("a card with neither timestamp sorts last, not first",
+      ReplyCardOrder.handledKey(answeredTs: nil, expiredTs: nil, id: "rc-a").ts
+          == 0)
+
+// The no-SDK harness cannot compile StudioStore, so this is the only guard
+// against the app quietly sorting its panes some other way.
+check("every pane routes its order through the shared rule",
+      studioStoreSource.components(separatedBy: "ReplyCardOrder.newestFirst")
+          .count == 5
+          && studioStoreSource.components(
+              separatedBy: "ReplyCardOrder.waitingKey(createdTs:"
+          ).count == 3
+          && studioStoreSource.components(
+              separatedBy: "ReplyCardOrder.handledKey("
+          ).count == 3)
+check("no pane keeps its own inline card comparator",
+      !studioStoreSource.contains(".sorted { $0.createdTs")
+          && !studioStoreSource.contains(".sorted { $0.answeredTs"))
+
+// MARK: - Answer confirmation
+
+print("\nanswer confirmation")
+
+let askDetailSource = sourceFile("OffiCraft/Features/Asks/AskDetailView.swift")
+let taskDetailSource = sourceFile("OffiCraft/Features/Tasks/TaskDetailView.swift")
+
+// Confirming has to be as specific as the tap it replaces: a dialog that does
+// not name the option is no better than the mis-tap.
+check("the dialog quotes the option it is about to send",
+      AnswerConfirmationCopy.message(option: "先加分頁，預設 50 筆")
+          .contains("「先加分頁，預設 50 筆」"))
+check("a long option is trimmed but still identifiable",
+      AnswerConfirmationCopy.preview(of: String(repeating: "選", count: 200))
+          == String(repeating: "選", count: AnswerConfirmationCopy.optionPreviewLimit) + "…")
+check("a short option is passed through untouched",
+      AnswerConfirmationCopy.preview(of: "寄出") == "寄出")
+check("an unhydrated card does not quote an empty option",
+      !AnswerConfirmationCopy.message(option: "").contains("「")
+          && !AnswerConfirmationCopy.message(option: "   ").contains("「"))
+check("the dialog says what sending does",
+      AnswerConfirmationCopy.message(option: "寄出").contains("關閉")
+          && AnswerConfirmationCopy.confirm == "送出回覆")
+
+// A per-file count of call sites cannot see a NEW screen that answers without
+// the guard — and the first version of this change shipped exactly that bug in
+// AskFullTextView, which no per-file check was looking at. So state the
+// invariants over the whole app tree instead, and let them find the files.
+let appSources = swiftSources(under: "OffiCraft")
+
+// 1. Discovery: who can even show an option? A new screen with option rows has
+// to come past this line, which is the moment to ask whether it is guarded.
+let optionRowFiles = Set(
+    appSources.filter { $0.body.contains("ReplyOptionRow(") }.map(\.name)
+)
+check("the set of screens that show reply options is unchanged",
+      optionRowFiles == [
+          "AskCardView.swift", "AskDetailView.swift",
+          "AskFullTextView.swift", "TaskDetailView.swift",
+      ],
+      "got \(optionRowFiles.sorted())")
+
+// 2. Nobody sends an option answer except through a confirmed PendingAnswer.
+// Per CALL, not per file: one screen can stage on one path and still send
+// directly on another, and a file-level check reads that as safe.
+for source in appSources where source.name != "StudioStore.swift" {
+    let calls = source.body.components(separatedBy: "store.answer(").dropFirst()
+        + source.body.components(separatedBy: "api.answer(").dropFirst()
+    for call in calls {
+        let head = String(call.prefix(160))
+        // Either it is the written-out answer (no option at all), or it sends
+        // the option that came back from the dialog.
+        let confirmed = head.contains("optionIdx: nil")
+            || head.contains("pending.optionIdx")
+        // Named outright rather than derived from a path, so the exemption
+        // reads as the decision it is.
+        let documentedException = source.name == "NotificationManager.swift"
+        check("\(source.name) sends an option answer only after confirmation",
+              confirmed || documentedException,
+              "unconfirmed send: \(head.prefix(60))")
+    }
+}
+
+// 3. Staging implies guarding: a screen that stages an answer must also present
+// the dialog, or the answer is staged and never resolved.
+for source in appSources where source.body.contains("PendingAnswer(") {
+    check("\(source.name) presents the dialog it stages for",
+          source.body.contains(".answerConfirmation("))
+}
+
+// 4. The all-options cover is the one that broke: it must NOT close itself on
+// tap, or it takes its own confirmation dialog down with it.
+// Look at the closure itself, not at one spelling of it: `dismiss()` on the
+// next line, on the same line behind a semicolon, and as `self.dismiss()` are
+// the same bug, and the first two both beat an earlier version of this check.
+check("the all-options cover leaves closing to its caller",
+      squashed(withoutComments(
+          sourceFile("OffiCraft/Features/Asks/AskFullTextView.swift")
+      ))
+      .components(separatedBy: "onAnswer(index)")
+      .dropFirst()
+      .allSatisfy { tail in
+          !String(tail.prefix(while: { $0 != "}" })).contains("dismiss")
+      })
+check("both callers close the cover only after the send is confirmed",
+      squashed(withoutComments(asksViewSource))
+          .contains("allOptionsFor = nil Task { await send(pending) }")
+          && squashed(withoutComments(askDetailSource))
+              .contains("showAllOptions = false send(pending)"))
+
+check("the written-out answer keeps its own explicit send",
+      asksViewSource.contains("optionIdx: nil, text: text")
+          && askDetailSource.contains("optionIdx: nil, text: ownAnswer"))
+
+// The Lock Screen action is a documented exception, not an oversight: it cannot
+// shift under a finger and Face ID already gates it. Guard the decision so it
+// stays a decision.
+check("the Lock Screen path is the only send that skips the dialog",
+      squashed(withoutComments(sourceFile(
+          "OffiCraft/Notifications/NotificationManager.swift"
+      ))).components(separatedBy: "api.answer(").count == 2)
+check("the Lock Screen exception stays documented",
+      sourceFile("OffiCraft/Notifications/NotificationManager.swift")
+          .contains("Deliberately NOT behind the in-app confirmation dialog"))
+
+// The staged index is resolved by a pure function, so the out-of-range guard is
+// testable rather than a promise in a view.
+check("an option index past the end falls back instead of trapping",
+      AnswerConfirmationCopy.optionText(options: ["a", "b"], optionIdx: 5) == ""
+          && AnswerConfirmationCopy.optionText(options: nil, optionIdx: 0) == ""
+          && AnswerConfirmationCopy.optionText(options: ["a", "b"], optionIdx: 1) == "b")
+
+// The preview limit itself, not just "some limit": every earlier version of
+// these checks passed with the limit set anywhere from 12 upwards.
+check("the preview limit keeps 70 characters whole and trims 71",
+      AnswerConfirmationCopy.optionPreviewLimit == 70
+          && AnswerConfirmationCopy.preview(of: String(repeating: "字", count: 70))
+              == String(repeating: "字", count: 70)
+          && AnswerConfirmationCopy.preview(of: String(repeating: "字", count: 71))
+              == String(repeating: "字", count: 70) + "…")
 
 // MARK: - Summary
 

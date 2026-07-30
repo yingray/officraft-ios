@@ -170,6 +170,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     /// Answering straight from the Lock Screen — no app launch.
+    ///
+    /// Deliberately NOT behind the in-app confirmation dialog. That dialog
+    /// exists because the inbox reorders under the owner's finger; a Lock Screen
+    /// action button does not move, and `.authenticationRequired` already puts
+    /// Face ID between the tap and the send. Adding a second step here would
+    /// cost the one thing this path is for — deciding without opening the app.
     private func answer(cardId: String, optionIdx: Int) async {
         guard let session, session.phase != .signedOut else { return }
         try? await session.api.answer(cardId: cardId, optionIdx: optionIdx, text: nil)

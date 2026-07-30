@@ -24,6 +24,8 @@ swiftc -O \
   "$ROOT/OffiCraft/Models/StudioSettings.swift" \
   "$ROOT/OffiCraft/Models/ReplyCardTone.swift" \
   "$ROOT/OffiCraft/Models/HandledReplyCardsPolicy.swift" \
+  "$ROOT/OffiCraft/Models/ReplyCardOrder.swift" \
+  "$ROOT/OffiCraft/Models/AnswerConfirmationCopy.swift" \
   "$ROOT/OffiCraft/Models/IPadSplitDetailIdentity.swift" \
   "$ROOT/OffiCraft/Features/Office/RosterUnread.swift" \
   "$ROOT/OffiCraft/Features/Asks/AskOptionLayout.swift" \

@@ -145,8 +145,20 @@ final class StudioStore {
     }
 
     private func loadDemo() {
-        waitingCards = DemoData.replyCards.filter { $0.status == .waiting }
-        handledCards = DemoData.replyCards.filter { $0.status != .waiting }
+        // Same order as the live panes, so a demo screenshot shows what the
+        // owner's own inbox will show.
+        waitingCards = ReplyCardOrder.newestFirst(
+            DemoData.replyCards.filter { $0.status == .waiting }
+        ) { ReplyCardOrder.waitingKey(createdTs: $0.createdTs, id: $0.id) }
+        handledCards = ReplyCardOrder.newestFirst(
+            DemoData.replyCards.filter { $0.status != .waiting }
+        ) {
+            ReplyCardOrder.handledKey(
+                answeredTs: $0.answeredTs,
+                expiredTs: $0.expiredTs,
+                id: $0.id
+            )
+        }
         handledCardsLoadedRevision = replyCardRevision
         cardCounts = DemoData.replyCardCounts
         cardDetails = Dictionary(uniqueKeysWithValues: DemoData.replyCards.map { ($0.id, $0) })
@@ -183,7 +195,9 @@ final class StudioStore {
         async let counts = session.api.replyCardCounts()
 
         do {
-            let fresh = try await waiting.sorted { $0.createdTs < $1.createdTs }
+            let fresh = ReplyCardOrder.newestFirst(try await waiting) {
+                ReplyCardOrder.waitingKey(createdTs: $0.createdTs, id: $0.id)
+            }
             // Carry over what is already hydrated. A light row would otherwise
             // overwrite a full card and send it back through hydration on
             // every single refresh. A reply-card delta clears `cardDetails`,
@@ -219,8 +233,12 @@ final class StudioStore {
             // A newer delta landed while these requests were in flight. Its
             // refresh owns the result; do not make this older snapshot current.
             guard requestedRevision == replyCardRevision else { return }
-            handledCards = handled.sorted {
-                ($0.answeredTs ?? $0.expiredTs ?? 0) > ($1.answeredTs ?? $1.expiredTs ?? 0)
+            handledCards = ReplyCardOrder.newestFirst(handled) {
+                ReplyCardOrder.handledKey(
+                    answeredTs: $0.answeredTs,
+                    expiredTs: $0.expiredTs,
+                    id: $0.id
+                )
             }
             handledCardsLoadedRevision = requestedRevision
         } catch {
