@@ -2,11 +2,25 @@ import SwiftUI
 import UIKit
 import QuickLook
 
+struct MessageMarkdownPreviewPayload: Identifiable {
+    let id: String
+    let title: String
+    let source: String
+    let author: String
+    let timestamp: Date
+    /// The transcript renders the owner's own messages as plain text — he types
+    /// short replies, not documents, and a stray `#` or `|` is a character he
+    /// meant. The viewer has to agree with the bubble it was opened from, or
+    /// the same message says two different things.
+    let rendersMarkdown: Bool
+}
+
 /// What the app is currently previewing. One enum so chat, reply cards and task
 /// artifacts all route through the same presenter.
 enum PreviewTarget: Identifiable {
     /// Image lightbox, with the sibling images so left/right swipes work.
     case image(attachments: [Attachment], index: Int)
+    case markdownText(MessageMarkdownPreviewPayload)
     case markdown(Attachment)
     /// Anything else — handed to Quick Look.
     case file(Attachment)
@@ -15,6 +29,7 @@ enum PreviewTarget: Identifiable {
         switch self {
         case .image(let attachments, let index):
             return "image-\(attachments[safe: index]?.id ?? "0")"
+        case .markdownText(let payload): return "message-md-\(payload.id)"
         case .markdown(let attachment): return "md-\(attachment.id)"
         case .file(let attachment): return "file-\(attachment.id)"
         }
@@ -30,7 +45,8 @@ extension Array {
 /// Routes a `PreviewTarget` to the right presentation.
 ///
 /// Deliberately only TWO presentation modifiers: one full-screen cover for the
-/// lightbox and one sheet that branches between markdown and Quick Look.
+/// lightbox/message viewer and one sheet that branches between attachment
+/// markdown and Quick Look.
 /// Stacking a third sheet on the same view is what made these previews
 /// unreliable — SwiftUI is fussy about several sheet-class modifiers competing
 /// on one node, especially alongside a photo picker or a file importer.
@@ -43,13 +59,18 @@ struct AttachmentPreviewPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .fullScreenCover(item: bindingForImage) { payload in
-                ImageLightboxView(
-                    attachments: payload.attachments,
-                    startIndex: payload.index,
-                    author: author,
-                    timestamp: timestamp
-                )
+            .fullScreenCover(item: bindingForFullScreen) { payload in
+                switch payload {
+                case .image(let image):
+                    ImageLightboxView(
+                        attachments: image.attachments,
+                        startIndex: image.index,
+                        author: author,
+                        timestamp: timestamp
+                    )
+                case .markdownText(let message):
+                    MessageMarkdownPreviewView(payload: message)
+                }
             }
             .sheet(item: bindingForSheet) { payload in
                 switch payload.kind {
@@ -72,6 +93,18 @@ struct AttachmentPreviewPresenter: ViewModifier {
         var id: String { attachments[safe: index]?.id ?? "0" }
     }
 
+    private enum FullScreenPayload: Identifiable {
+        case image(ImagePayload)
+        case markdownText(MessageMarkdownPreviewPayload)
+
+        var id: String {
+            switch self {
+            case .image(let image): return "image-\(image.id)"
+            case .markdownText(let message): return "message-md-\(message.id)"
+            }
+        }
+    }
+
     private struct SheetPayload: Identifiable {
         enum Kind { case markdown, file }
         let attachment: Attachment
@@ -79,11 +112,16 @@ struct AttachmentPreviewPresenter: ViewModifier {
         var id: String { "\(kind)-\(attachment.id)" }
     }
 
-    private var bindingForImage: Binding<ImagePayload?> {
+    private var bindingForFullScreen: Binding<FullScreenPayload?> {
         Binding(
             get: {
                 if case .image(let attachments, let index) = target {
-                    return ImagePayload(attachments: attachments, index: index)
+                    return .image(
+                        ImagePayload(attachments: attachments, index: index)
+                    )
+                }
+                if case .markdownText(let payload) = target {
+                    return .markdownText(payload)
                 }
                 return nil
             },
@@ -361,6 +399,139 @@ struct ImageLightboxView: View {
     private func share() {
         guard let current, let image = loaded[current.id] else { return }
         ShareSheet.present(items: [image])
+    }
+}
+
+// MARK: - Message markdown fullscreen
+
+struct MessageMarkdownPreviewView: View {
+    let payload: MessageMarkdownPreviewPayload
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var didCopy = false
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                header
+                ScrollView {
+                    fullText
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                        .padding(.bottom, 28)
+                }
+                footer
+            }
+            .background(OC.bg)
+            .navigationBarHidden(true)
+        }
+    }
+
+    /// Markdown for the messages the transcript renders as markdown, plain text
+    /// for the ones it does not — same rule either side of the tap.
+    @ViewBuilder
+    private var fullText: some View {
+        if payload.rendersMarkdown {
+            MarkdownView(payload.source, scale: .document)
+        } else {
+            Text(payload.source)
+                .font(.ocCallout)
+                .foregroundStyle(OC.label)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Icon(.fileText, size: 17)
+                    .foregroundStyle(OC.accent)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(payload.title)
+                        .font(.ocCalloutEmphasised)
+                        .foregroundStyle(OC.label)
+                        .lineLimit(1)
+                    Text("\(payload.author) · \(OCFormat.time(payload.timestamp))")
+                        .font(.ocCaption)
+                        .foregroundStyle(OC.labelTertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                // The only way out of this cover — no drag-to-dismiss, no nav
+                // bar — so the tap target is built the way the rest of the app
+                // builds one: inside the label, with .plain.
+                Button { dismiss() } label: {
+                    Text("完成")
+                        .font(.ocCallout)
+                        .foregroundStyle(OC.accent)
+                        .frame(minWidth: OCMetrics.minTapTarget,
+                               minHeight: OCMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("關閉訊息全文")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            Hairline()
+        }
+    }
+
+    private var footer: some View {
+        VStack(spacing: 0) {
+            Hairline()
+            HStack(spacing: 10) {
+                Text(didCopy ? "全文已複製" : payload.rendersMarkdown
+                     ? "Markdown 完整內容" : "訊息完整內容")
+                    .font(.ocFootnote)
+                    .foregroundStyle(OC.labelTertiary)
+                Spacer(minLength: 6)
+                Button {
+                    UIPasteboard.general.string = payload.source
+                    copy()
+                } label: {
+                    Text(didCopy ? "已複製" : "複製全文")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(OC.accent)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: OCMetrics.minTapTarget)
+                        .background(Capsule().fill(OC.accentFill))
+                }
+                .buttonStyle(.plain)
+                // The label stays the action; "已複製" is a state, and a
+                // VoiceOver user who lands here later still needs to be told
+                // what the button does.
+                .accessibilityLabel("複製訊息全文")
+                .accessibilityValue(didCopy ? "已複製" : "")
+
+                Button {
+                    ShareSheet.present(items: [payload.source])
+                } label: {
+                    Text("分享")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(OC.labelBody)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: OCMetrics.minTapTarget)
+                        .background(Capsule().fill(OC.surface))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("分享訊息全文")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+        }
+        .background(OC.bg)
+    }
+
+    /// Confirmation, not a mode: it goes back to the affordance so a second copy
+    /// still looks like a button that does something.
+    private func copy() {
+        withAnimation(.snappy(duration: 0.18)) { didCopy = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            withAnimation(.snappy(duration: 0.18)) { didCopy = false }
+        }
     }
 }
 

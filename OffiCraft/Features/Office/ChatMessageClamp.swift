@@ -38,11 +38,11 @@ enum ChatMessageClamp {
         naturalHeight > foldThreshold
     }
 
-    /// The cap to apply, or `nil` for "no cap" — the shape SwiftUI's
-    /// `frame(maxHeight:)` wants.
-    static func cap(naturalHeight: CGFloat, isExpanded: Bool) -> CGFloat? {
-        guard !isExpanded, isOverlong(naturalHeight: naturalHeight) else { return nil }
-        return collapsedHeight
+    /// The permanent transcript cap, or `nil` for "no cap" — the shape
+    /// SwiftUI's `frame(maxHeight:)` wants. Full text opens in a separate
+    /// viewer, so an overlong bubble never grows inside the transcript.
+    static func cap(naturalHeight: CGFloat) -> CGFloat? {
+        isOverlong(naturalHeight: naturalHeight) ? collapsedHeight : nil
     }
 
     // MARK: Seeding the first frame

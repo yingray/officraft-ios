@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A message body that starts clipped when it is very long, with 展開 to open it.
+/// A message body that stays clipped when very long, with a door to its viewer.
 ///
 /// Two heights, in order: a rough estimate from the text decides the first
 /// frame, and the measured height takes over once the row has been laid out.
@@ -22,14 +22,11 @@ struct CollapsibleMessageBody<Content: View>: View {
     /// a measurement would draw the message out in full, every time, before
     /// snapping shut.
     let source: String
-    /// Whether the owner has opened this one. Held by the transcript, keyed by
-    /// message id, so an SSE refetch that swaps the array does not close it.
-    let isExpanded: Bool
     var alignment: HorizontalAlignment = .leading
-    /// The 展開/收合 row's colour. Own bubbles are dark blue, so the grey the
+    /// The 展開全文 row's colour. Own bubbles are dark blue, so the grey the
     /// rest of the transcript uses would sink into them.
     var tint: Color = OC.labelTertiary
-    var onToggle: () -> Void
+    let onOpenFullText: () -> Void
     @ViewBuilder var content: Content
 
     /// Nil until the row has been laid out once; the estimate stands in for it
@@ -44,9 +41,8 @@ struct CollapsibleMessageBody<Content: View>: View {
         ChatMessageClamp.isOverlong(naturalHeight: naturalHeight)
     }
 
-    /// Non-nil only while this message is actually folded.
     private var cap: CGFloat? {
-        ChatMessageClamp.cap(naturalHeight: naturalHeight, isExpanded: isExpanded)
+        ChatMessageClamp.cap(naturalHeight: naturalHeight)
     }
 
     var body: some View {
@@ -73,30 +69,26 @@ struct CollapsibleMessageBody<Content: View>: View {
                 .frame(maxHeight: cap, alignment: .top)
                 .clipped()
                 .mask { clipMask }
-                // The tap target only exists while the message is folded, and
-                // it is an overlay rather than a gesture on the body: a
-                // gesture left attached would keep swallowing taps meant for
-                // the markdown links, the copy button and the scrollable code
-                // and table blocks underneath once the message is open.
+                // The overlay covers the whole clipped body, not just the
+                // fade, so anywhere on a folded message opens the viewer. It
+                // does swallow taps meant for links and the code block's 複製
+                // button — that is the same trade the folded state always made,
+                // and the viewer is where those are reachable.
+                // Hidden from VoiceOver: an element laid over the text would
+                // hide the text. The labelled row below is the accessible way
+                // in.
                 .overlay {
                     if cap != nil {
                         Rectangle()
                             .fill(.clear)
                             .contentShape(Rectangle())
-                            .onTapGesture { toggle() }
-                            // Hidden from VoiceOver on purpose: an element
-                            // laid over the text would hide the text itself.
-                            // The 展開全文 row below is the accessible way in.
+                            .onTapGesture { onOpenFullText() }
                             .accessibilityHidden(true)
                     }
                 }
 
-            if isOverlong { toggleRow }
+            if isOverlong { openRow }
         }
-    }
-
-    private func toggle() {
-        withAnimation(.snappy(duration: 0.22)) { onToggle() }
     }
 
     /// Fades the last stretch of a folded message so the cut reads as "there is
@@ -118,13 +110,11 @@ struct CollapsibleMessageBody<Content: View>: View {
         }
     }
 
-    private var toggleRow: some View {
-        Button(action: toggle) {
+    private var openRow: some View {
+        Button(action: onOpenFullText) {
             HStack(spacing: 5) {
-                // The two glyphs the run fold already uses, so the affordance
-                // is learned once: pointing right is closed, down is open.
-                Icon(isExpanded ? .chevronDown : .chevronRight, size: 11)
-                Text(isExpanded ? "收合" : "展開全文")
+                Icon(.chevronRight, size: 11)
+                Text("展開全文")
                     .font(.ocCaption)
             }
             .foregroundStyle(tint)
@@ -135,6 +125,6 @@ struct CollapsibleMessageBody<Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isExpanded ? "收合這則訊息" : "展開這則訊息全文")
+        .accessibilityLabel("以全螢幕展開這則訊息全文")
     }
 }

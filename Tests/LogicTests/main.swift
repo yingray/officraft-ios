@@ -599,12 +599,21 @@ check("a message past the slack folds",
       ChatMessageClamp.isOverlong(naturalHeight: ChatMessageClamp.foldThreshold + 1))
 
 check("a short message gets no cap",
-      ChatMessageClamp.cap(naturalHeight: 180, isExpanded: false) == nil)
+      ChatMessageClamp.cap(naturalHeight: 180) == nil)
 check("an overlong message is capped at the collapsed height",
-      ChatMessageClamp.cap(naturalHeight: 2000, isExpanded: false)
+      ChatMessageClamp.cap(naturalHeight: 2000)
           == ChatMessageClamp.collapsedHeight)
-check("an opened message is not capped",
-      ChatMessageClamp.cap(naturalHeight: 2000, isExpanded: true) == nil)
+// cap and isOverlong have to agree at every height, not just at two samples:
+// the transcript's invariant is "overlong means capped, forever".
+check("capping and overlong agree at every height",
+      [0, 1, 100, 179, 180, 181, 320, 999, 5000].allSatisfy { height in
+          let h = CGFloat(height)
+          let capped = ChatMessageClamp.cap(naturalHeight: h) != nil
+          return capped == ChatMessageClamp.isOverlong(naturalHeight: h)
+              && (!capped
+                  || ChatMessageClamp.cap(naturalHeight: h)
+                      == ChatMessageClamp.collapsedHeight)
+      })
 
 // The seed decides the very first frame, before anything has been measured.
 // It only has to tell long from short.
@@ -714,6 +723,12 @@ func sourceFile(_ relativePath: String) -> String {
 let studioStoreSource = sourceFile("OffiCraft/App/StudioStore.swift")
 let asksViewSource = sourceFile("OffiCraft/Features/Asks/AsksView.swift")
 let splitRootViewSource = sourceFile("OffiCraft/Features/iPad/SplitRootView.swift")
+let chatViewSource = sourceFile("OffiCraft/Features/Office/ChatView.swift")
+let collapsibleMessageBodySource =
+    sourceFile("OffiCraft/Features/Office/CollapsibleMessageBody.swift")
+let chatFoldedRunSource = sourceFile("OffiCraft/Features/Office/ChatFoldedRun.swift")
+let attachmentPreviewSource =
+    sourceFile("OffiCraft/Features/Attachments/AttachmentPreview.swift")
 
 check("reply-card SSE invalidates the handled snapshot",
       studioStoreSource.contains("case .replyCard:\n            invalidateReplyCards()"))
@@ -725,6 +740,76 @@ check("iPhone handled pane no longer observes answered totals",
       !asksViewSource.contains(".onChange(of: store.cardCounts.answered)"))
 check("iPad handled pane no longer observes answered totals",
       !splitRootViewSource.contains(".onChange(of: store.cardCounts.answered)"))
+
+// MARK: - Chat message full-text preview
+
+print("\nchat message full-text preview")
+
+check("overlong bubbles have no inline expanded state",
+      !collapsibleMessageBodySource.contains("isExpanded")
+          && collapsibleMessageBodySource.contains(
+              "let onOpenFullText: () -> Void"
+          ))
+check("both the folded body and the full-text row open the viewer",
+      collapsibleMessageBodySource.contains("onOpenFullText()")
+          && collapsibleMessageBodySource.contains("if cap != nil")
+          && collapsibleMessageBodySource.contains(
+              "Button(action: onOpenFullText)"
+          )
+          && collapsibleMessageBodySource.contains("if isOverlong { openRow }"))
+check("ChatView removed transcript message expansion state",
+      !chatViewSource.contains("expandedMessages")
+          && !chatViewSource.contains("toggleMessage"))
+check("dropping a full-text call site cannot compile",
+      chatViewSource.contains("let onOpenFullText: () -> Void")
+          && chatFoldedRunSource.contains("let onOpenFullText: () -> Void")
+          && !chatViewSource.contains("onOpenFullText: () -> Void = ")
+          && !chatFoldedRunSource.contains("onOpenFullText: () -> Void = "))
+check("direct and folded chat rows route full text to markdownText",
+      chatViewSource.contains("preview = .markdownText(")
+          && chatViewSource.components(
+              separatedBy: "onOpenFullText: { openFullText(message) }"
+          ).count == 3)
+check("message markdown shares the existing fullscreen presenter",
+      attachmentPreviewSource.contains(
+          ".fullScreenCover(item: bindingForFullScreen)"
+      )
+          && attachmentPreviewSource.contains(
+              "case markdownText(MessageMarkdownPreviewPayload)"
+          )
+          && attachmentPreviewSource.contains(
+              "MessageMarkdownPreviewView(payload: message)"
+          ))
+check("message viewer renders markdown metadata and copy affordance",
+      attachmentPreviewSource.contains(
+          "MarkdownView(payload.source, scale: .document)"
+      )
+          && attachmentPreviewSource.contains("Text(payload.title)")
+          && attachmentPreviewSource.contains(
+              "OCFormat.time(payload.timestamp)"
+          )
+          && attachmentPreviewSource.contains(
+              "UIPasteboard.general.string = payload.source"
+          ))
+check("own bubbles stay plain text in the transcript",
+      chatViewSource.components(
+          separatedBy: "MarkdownView(message.body, scale: .message)"
+      ).count == 2
+          && chatViewSource.contains("Text(message.body)")
+          && chatViewSource.contains(".foregroundStyle(OC.bubbleOwnText)"))
+// A bubble rendered as plain text must not become markdown one tap later.
+check("the viewer inherits the bubble's own plain-text rule",
+      chatViewSource.contains(
+          "rendersMarkdown: !message.isOwn(ownerId: session.ownerId)"
+      )
+          && attachmentPreviewSource.contains("let rendersMarkdown: Bool")
+          && attachmentPreviewSource.contains("if payload.rendersMarkdown {")
+          && attachmentPreviewSource.contains("MarkdownView(payload.source, scale: .document)")
+          && attachmentPreviewSource.contains("Text(payload.source)"))
+// 完成 is the only way out of the cover — no drag-to-dismiss, no nav bar.
+check("the message viewer keeps a working way out",
+      attachmentPreviewSource.contains("Button { dismiss() } label:")
+          && attachmentPreviewSource.contains("關閉訊息全文"))
 
 // MARK: - iPad split navigation
 

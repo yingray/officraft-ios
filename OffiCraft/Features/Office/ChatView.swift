@@ -25,10 +25,6 @@ struct ChatView: View {
     /// Folded runs the owner has opened, keyed by their first message id.
     /// Empty by design: inter-agent chatter and handover notices start closed.
     @State private var expandedRuns: Set<String> = []
-    /// Overlong messages the owner has opened out, keyed by message id. Same
-    /// reason as the runs above: an id survives an SSE refetch, a position
-    /// does not.
-    @State private var expandedMessages: Set<String> = []
     /// Whether the reply-card jump has already fired. It happens on the
     /// first load with content and never again.
     @State private var didJumpToHighlight = false
@@ -184,10 +180,10 @@ struct ChatView: View {
                             DaySeparator(date: first.sentAt)
                         }
                         if run.lane.isFolded {
-                            foldedRun(run, proxy: proxy)
+                            foldedRun(run)
                         } else {
                             ForEach(run.messages) { message in
-                                directRow(message, proxy: proxy)
+                                directRow(message)
                             }
                         }
                     }
@@ -237,7 +233,7 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private func foldedRun(_ run: ResolvedRun, proxy: ScrollViewProxy) -> some View {
+    private func foldedRun(_ run: ResolvedRun) -> some View {
         let key = run.id
         let isExpanded = expandedRuns.contains(key)
 
@@ -259,8 +255,7 @@ struct ChatView: View {
                             lane: run.lane,
                             header: routing(of: message),
                             message: message,
-                            isExpanded: expandedMessages.contains(message.id),
-                            onToggleExpanded: { toggleMessage(message.id, proxy: proxy) },
+                            onOpenFullText: { openFullText(message) },
                             onOpenAttachment: { attachment in
                                 openPreview(attachment, in: message)
                             }
@@ -272,43 +267,38 @@ struct ChatView: View {
         }
     }
 
-    private func directRow(_ message: ChatMessage, proxy: ScrollViewProxy) -> some View {
+    private func directRow(_ message: ChatMessage) -> some View {
         MessageRow(
             message: message,
             isOwn: message.isOwn(ownerId: session.ownerId),
             isHighlighted: message.id == highlightMessageId,
-            isExpanded: expandedMessages.contains(message.id),
-            onToggleExpanded: { toggleMessage(message.id, proxy: proxy) },
+            onOpenFullText: { openFullText(message) },
             onOpenAttachment: { attachment in openPreview(attachment, in: message) },
             onOpenCard: { openCard = CardRoute(id: $0) }
         )
         .id(message.id)
     }
 
-    /// Collapsing takes the message's whole height back out of the transcript,
-    /// and the 收合 row sits at the BOTTOM of an open message — so when it is
-    /// tapped the message's top edge is far above the screen. A scroll offset
-    /// is a distance from the top of the content, so leaving it alone drops the
-    /// reader thousands of points further down, into material they have not
-    /// read. Re-anchor on the message that was just closed: with it folded to
-    /// 320pt the whole thing fits, which is the invariant a transcript has to
-    /// hold — the thing you are looking at does not move.
-    ///
-    /// Expanding needs no such thing: the cap is top-aligned, so a message
-    /// grows strictly downward and nothing already on screen shifts.
-    private func toggleMessage(_ id: String, proxy: ScrollViewProxy) {
-        if expandedMessages.contains(id) {
-            expandedMessages.remove(id)
-            proxy.scrollTo(id, anchor: .top)
-        } else {
-            expandedMessages.insert(id)
-        }
-    }
-
     private func openPreview(_ attachment: Attachment, in message: ChatMessage) {
         previewAuthor = store.displayName(for: message.from)
         previewTimestamp = message.sentAt
         preview = previewTarget(for: attachment, in: message.attachments ?? [])
+    }
+
+    /// The viewer renders the message the way its bubble did: own bubbles are
+    /// plain text (see `MessageRow`), everyone else's are markdown. Deciding it
+    /// here rather than in the viewer keeps the two in one place.
+    private func openFullText(_ message: ChatMessage) {
+        preview = .markdownText(
+            MessageMarkdownPreviewPayload(
+                id: message.id,
+                title: "訊息全文",
+                source: message.body,
+                author: store.displayName(for: message.from),
+                timestamp: message.sentAt,
+                rendersMarkdown: !message.isOwn(ownerId: session.ownerId)
+            )
+        )
     }
 
     /// "Kyle → Sasha" — the doc's rule for an opened fold. Without it a folded
@@ -398,8 +388,7 @@ private struct MessageRow: View {
     let message: ChatMessage
     let isOwn: Bool
     var isHighlighted: Bool = false
-    var isExpanded: Bool = false
-    var onToggleExpanded: () -> Void = {}
+    let onOpenFullText: () -> Void
     var onOpenAttachment: (Attachment) -> Void
     var onOpenCard: (String) -> Void
 
@@ -432,10 +421,9 @@ private struct MessageRow: View {
                 if !message.body.isEmpty {
                     CollapsibleMessageBody(
                         source: message.body,
-                        isExpanded: isExpanded,
                         alignment: .trailing,
                         tint: OC.bubbleOwnText.opacity(0.65),
-                        onToggle: onToggleExpanded
+                        onOpenFullText: onOpenFullText
                     ) {
                         Text(message.body)
                             .font(.ocCallout)
@@ -466,8 +454,7 @@ private struct MessageRow: View {
                 }
 
                 CollapsibleMessageBody(source: message.body,
-                                       isExpanded: isExpanded,
-                                       onToggle: onToggleExpanded) {
+                                       onOpenFullText: onOpenFullText) {
                     MarkdownView(message.body, scale: .message)
                 }
 
