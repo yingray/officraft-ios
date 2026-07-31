@@ -1125,6 +1125,136 @@ check("the preview limit keeps 70 characters whole and trims 71",
           && AnswerConfirmationCopy.preview(of: String(repeating: "字", count: 71))
               == String(repeating: "字", count: 70) + "…")
 
+// MARK: - The decision a resolved 請示 block names
+
+print("\nanswered card summary")
+
+// 1. An answered card names the option. The full card carries `options` and an
+// index, and resolving that pair is the whole point — the wording is not on the
+// message.
+check("an answered card names the option its index points at",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: 1,
+                               optionWording: nil,
+                               options: ["先擋著", "直接改設定"],
+                               ownText: nil) == "已選：直接改設定")
+// The light list row sends the wording instead of the list, and it wins when
+// both are present — it is what the server says was picked.
+check("the wire's own wording beats the index",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: 0,
+                               optionWording: "直接改設定",
+                               options: ["先擋著"],
+                               ownText: nil) == "已選：直接改設定")
+// An index can outlive the options it came from. That must read as "not known
+// yet", never as a trap and never as the wrong option.
+check("an option index past the end falls back to the typed reply",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: 7,
+                               optionWording: nil, options: ["a", "b"],
+                               ownText: "照舊就好") == "已回覆：照舊就好")
+
+// 2. A typed reply is shown as a reply, not as a picked option.
+check("a typed reply is labelled as a reply",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: nil,
+                               optionWording: nil, options: nil,
+                               ownText: "照舊就好") == "已回覆：照舊就好")
+// The trim keeps the block one line tall, at the same limit the confirmation
+// dialog uses. Pin the boundary: 70 whole, 71 trimmed.
+check("the decision line trims at the shared preview limit",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: nil,
+                               optionWording: nil, options: nil,
+                               ownText: String(repeating: "字", count: 70))
+          == "已回覆：" + String(repeating: "字", count: 70)
+          && AnsweredCardSummary.text(statusRaw: "answered", optionIdx: nil,
+                                      optionWording: nil, options: nil,
+                                      ownText: String(repeating: "字", count: 71))
+              == "已回覆：" + String(repeating: "字", count: 70) + "…")
+
+// 3. An answered card whose detail has not arrived says nothing. The chat block
+// is deliberately more conservative than 請示頁, which falls back to "已回覆"
+// (AskCardView): the block is one line under a green frame, so "已回覆" only
+// repeats what the frame already says, and 「已選」 with nothing behind it would
+// invent a decision outright.
+check("an answered card with no answer content stays silent",
+      AnsweredCardSummary.text(statusRaw: "answered", optionIdx: nil,
+                               optionWording: nil, options: nil,
+                               ownText: nil) == nil
+          && AnsweredCardSummary.text(statusRaw: "answered", optionIdx: 0,
+                                      optionWording: "  ", options: nil,
+                                      ownText: "  ") == nil)
+
+// 4. 過期 is its own outcome, not a decision.
+check("an expired card says so instead of naming an option",
+      AnsweredCardSummary.text(statusRaw: "expired", optionIdx: 0,
+                               optionWording: "先擋著", options: ["先擋著"],
+                               ownText: nil) == "已過期")
+
+// 5. Nothing to report while the card still waits, or when the status is one
+// this build does not know.
+check("a waiting or unknown status adds no line",
+      AnsweredCardSummary.text(statusRaw: "waiting", optionIdx: nil,
+                               optionWording: nil, options: nil,
+                               ownText: nil) == nil
+          && AnsweredCardSummary.text(statusRaw: "escalated", optionIdx: nil,
+                                      optionWording: nil, options: nil,
+                                      ownText: nil) == nil
+          && AnsweredCardSummary.text(statusRaw: nil, optionIdx: nil,
+                                      optionWording: nil, options: nil,
+                                      ownText: nil) == nil)
+
+// The block has to actually ask the pure function, and it has to fetch the card
+// — the wording is not on the message, so without the fetch the line can never
+// appear. Structure, not layout.
+let squashedChatView = squashed(withoutComments(chatViewSource))
+// Every argument, not just the call: passing a literal for any one of these
+// silently deletes a rule the pure function is tested for, and the tests above
+// keep passing because they never go through the view. Each of `statusRaw:
+// "answered"`, `optionIdx: nil` and a dropped `options:` was a green mutant.
+// Read the arguments of that one call, not the file: `statusRaw:
+// message.replyCardStatus?.rawValue` also appears on `cardTone`, so a
+// file-wide check stayed green while the call itself was hardcoded to
+// "answered".
+let decisionArguments = String(
+    (squashedChatView.components(separatedBy: "AnsweredCardSummary.text(").last ?? "")
+        .prefix(while: { $0 != ")" })
+)
+check("the 請示 block feeds the pure function the real message and card",
+      squashedChatView.contains("AnsweredCardSummary.text(")
+          && decisionArguments.contains(
+              "statusRaw: message.replyCardStatus?.rawValue"
+          )
+          && decisionArguments.contains("optionIdx: card?.answer?.optionIdx")
+          && decisionArguments.contains("optionWording: card?.answer?.option")
+          && decisionArguments.contains("options: card?.options")
+          && decisionArguments.contains("ownText: card?.answer?.text"))
+check("the 請示 block renders the decision line it computed",
+      squashedChatView.contains("if let decision")
+          && squashedChatView.contains("decisionRow(decision)"))
+// A line nobody can read is the same as no line. Look inside `decisionRow`
+// itself — a colour check anywhere in the file would pass on the block's border.
+let decisionRowBody = String(
+    (squashedChatView.components(separatedBy: "func decisionRow").last ?? "")
+        .prefix(while: { $0 != "}" })
+)
+check("the decision line is painted in the block's own tone",
+      decisionRowBody.contains(".foregroundStyle(cardTone.tint)"))
+check("the 請示 block hydrates the card it names",
+      squashedChatView.contains("card = await store.loadCardDetail(key.cardId)")
+          && squashedChatView.contains(".task(id: cardDetailKey)"))
+// Only an answered card is worth a request; a waiting block must not put one
+// behind every message in the transcript.
+check("only an answered block spends a fetch",
+      squashedChatView.contains("message.replyCardStatus == .answered"))
+// A re-answered card is answered before and after, so a key of card id alone
+// never re-runs the task and the block keeps the decision the owner replaced.
+check("the fetch key follows the reply-card revision",
+      squashedChatView.contains("revision: store.replyCardRevision")
+          && squashedChatView.contains("var cardDetailKey"))
+// One resolver for the decision, shared with 近期已處理 — two copies of the
+// option-vs-index rule is how the two surfaces start disagreeing.
+check("the handled card resolves its decision through the same function",
+      squashed(withoutComments(sourceFile(
+          "OffiCraft/Features/Asks/AskCardView.swift"
+      ))).contains("AnsweredCardSummary.chosenOption("))
+
 // MARK: - Summary
 
 print("\n\(checks - failures)/\(checks) checks passed")

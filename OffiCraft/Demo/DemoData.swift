@@ -363,6 +363,8 @@ enum DemoData {
         switch peer {
         case "m-kyle": return kyleThread
         case "ow-7": return outsourceThread
+        case "m-sasha": return sashaThread
+        case "m-mira": return miraThread
         default:
             return [
                 ChatMessage(id: "msg-\(peer)-1", from: peer, to: ownerId,
@@ -417,6 +419,33 @@ enum DemoData {
                     ts: minutesAgo(42),
                     replyCardStatus: .waiting,
                     meta: ["reply_card_id": .string("rc-1")]),
+    ]
+
+    /// The answered 請示 block. Sasha asked `rc-4` and the owner picked the
+    /// second option, so the block in this thread is the green one that names
+    /// the decision — the only place in the demo that shows it.
+    static let sashaThread: [ChatMessage] = [
+        ChatMessage(id: "msg-sasha-1", from: "m-sasha", to: ownerId,
+                    body: "兩種 hero 版型都做了 mock，量測與截圖放在卡上了。",
+                    ts: hoursAgo(2.5)),
+        ChatMessage(id: "msg-sasha-2", from: "m-sasha", to: ownerId,
+                    body: "首頁的 hero 要不要改成雙欄？手機上會被迫壓縮成單欄。",
+                    ts: hoursAgo(2.4),
+                    replyCardStatus: .answered,
+                    meta: ["reply_card_id": .string("rc-4")]),
+    ]
+
+    /// The expired 請示 block. `rc-5` timed out unanswered, so this one is grey
+    /// and says 已過期 rather than naming a decision nobody made.
+    static let miraThread: [ChatMessage] = [
+        ChatMessage(id: "msg-mira-1", from: "m-mira", to: ownerId,
+                    body: "本週有兩個里程碑完成，週報草稿寫好了。",
+                    ts: hoursAgo(9.2)),
+        ChatMessage(id: "msg-mira-2", from: "m-mira", to: ownerId,
+                    body: "週報要不要一併寄給客戶？客戶那邊也在追進度。",
+                    ts: hoursAgo(9),
+                    replyCardStatus: .expired,
+                    meta: ["reply_card_id": .string("rc-5")]),
     ]
 
     static let outsourceThread: [ChatMessage] = [

@@ -192,17 +192,16 @@ struct HandledAskCardView: View {
 
     @Environment(StudioStore.self) private var store
 
+    /// The list row carries no `options` — it sends the picked option's
+    /// original wording on the answer instead. Without that fallback the whole
+    /// 近期已處理 pane read "已回覆" and nothing else.
+    ///
+    /// Resolved by the shared pure function, not by a second copy of the rule:
+    /// the chat block names the same decision, and two copies would drift.
     private var chosenOption: String? {
-        if let index = card.answer?.optionIdx,
-           let options = card.options,
-           options.indices.contains(index) {
-            return options[index]
-        }
-        // The list row carries no `options` — it sends the picked option's
-        // original wording on the answer instead. Without this the whole
-        // 近期已處理 pane read "已回覆" and nothing else.
-        if let option = card.answer?.option, !option.isEmpty { return option }
-        return nil
+        AnsweredCardSummary.chosenOption(optionIdx: card.answer?.optionIdx,
+                                         optionWording: card.answer?.option,
+                                         options: card.options)
     }
 
     var body: some View {

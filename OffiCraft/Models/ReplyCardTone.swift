@@ -23,8 +23,11 @@ enum ReplyCardTone: Hashable {
         }
     }
 
-    /// The tone for a block where the colour is the **only** status signal —
-    /// no label beside it to say what the colour means.
+    /// The tone for a block where the colour is the only status signal for a
+    /// status this build cannot name. 已回覆 and 已過期 now print a line of
+    /// their own (see `AnsweredCardSummary`), but an absent, empty or
+    /// unrecognised status still prints nothing — for those the colour is all
+    /// the reader gets, and the reasoning below is about them.
     ///
     /// `init(statusRaw:)` sends anything it does not recognise to `.inactive`,
     /// which is right next to a label: grey plus 「—」 reads as "unknown", and

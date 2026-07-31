@@ -392,6 +392,11 @@ private struct MessageRow: View {
     var onOpenAttachment: (Attachment) -> Void
     var onOpenCard: (String) -> Void
 
+    @Environment(StudioStore.self) private var store
+
+    /// The card behind this block, once it has been fetched.
+    @State private var card: ReplyCard?
+
     /// A card announcement gets an outline, so the eye lands on it.
     private var isCardAnnouncement: Bool { message.replyCardId != nil }
 
@@ -399,11 +404,50 @@ private struct MessageRow: View {
     /// once the owner answered. The status is a read-time join on the wire, so
     /// it is only as fresh as the last thread load.
     ///
-    /// There is no status label in this block, so the colour carries the whole
-    /// message — hence the unlabelled fallback, which keeps an unusable status
-    /// amber instead of grey.
+    /// A status this build cannot name prints no line, so for those the colour
+    /// carries the whole message — hence the unlabelled fallback, which keeps an
+    /// unusable status amber instead of grey.
     private var cardTone: ReplyCardTone {
         .forUnlabelledBlock(statusRaw: message.replyCardStatus?.rawValue)
+    }
+
+    /// What the owner decided, ready to print under the header.
+    ///
+    /// The message itself carries only the card id and its status, so the
+    /// wording has to come from the card — until it arrives this is `nil` and
+    /// the block looks exactly as it did before.
+    private var decision: String? {
+        AnsweredCardSummary.text(statusRaw: message.replyCardStatus?.rawValue,
+                                 optionIdx: card?.answer?.optionIdx,
+                                 optionWording: card?.answer?.option,
+                                 options: card?.options,
+                                 ownText: card?.answer?.text)
+    }
+
+    /// Only an answered card needs a fetch: 已過期 says everything in its own
+    /// word, and a still-waiting card has no decision to name — fetching for it
+    /// would put a request behind every 請示 block in the transcript.
+    ///
+    /// The revision is in the key on purpose. A re-answered card is answered
+    /// before and after, so on the card id alone the task never runs again and
+    /// this block keeps printing the decision the owner just replaced —
+    /// `cardDetails` is cleared by then, so nothing else would correct it.
+    ///
+    /// The cost: every reply-card delta and every SSE reconnect bumps the
+    /// revision, so each visible answered block spends one more GET. That is
+    /// bounded by what is on screen, it is deduplicated in
+    /// `StudioStore.loadCardDetail`, and a wrong decision on screen is worse
+    /// than a request.
+    private struct CardDetailKey: Hashable {
+        let cardId: String
+        let revision: UInt64
+    }
+
+    private var cardDetailKey: CardDetailKey? {
+        guard let cardId = message.replyCardId,
+              message.replyCardStatus == .answered
+        else { return nil }
+        return CardDetailKey(cardId: cardId, revision: store.replyCardRevision)
     }
 
     var body: some View {
@@ -451,6 +495,7 @@ private struct MessageRow: View {
             VStack(alignment: .leading, spacing: 10) {
                 if isCardAnnouncement {
                     cardAnnouncementHeader
+                    if let decision { decisionRow(decision) }
                 }
 
                 CollapsibleMessageBody(source: message.body,
@@ -481,7 +526,21 @@ private struct MessageRow: View {
                             )
                     )
             )
+            .task(id: cardDetailKey) {
+                guard let key = cardDetailKey else { return }
+                card = await store.loadCardDetail(key.cardId)
+            }
         }
+    }
+
+    /// The decision, in the block's caption voice. It wears the block's own
+    /// tone so the line and the outline agree.
+    private func decisionRow(_ text: String) -> some View {
+        Text(text)
+            .font(.ocCaption)
+            .foregroundStyle(cardTone.tint)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var cardAnnouncementHeader: some View {

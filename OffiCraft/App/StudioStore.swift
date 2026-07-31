@@ -286,20 +286,40 @@ final class StudioStore {
     /// Cards with a hydration request already in flight.
     private var hydrating: Set<String> = []
 
+    /// Fetches already in the air, so callers that want the same card share one
+    /// request instead of racing for it.
+    private var detailFetches: [String: Task<ReplyCard?, Never>] = [:]
+
     /// The list endpoint omits `body`/`options`, so the single-card screen
     /// fetches the full card once and caches it.
+    ///
+    /// Deduplicated the same way `hydrateCard` is, but by sharing the task
+    /// rather than returning early — every caller here wants the card back, so
+    /// a late caller awaits the first fetch instead of starting a second one.
+    /// The 請示 blocks in a chat are the first caller that asks in bulk: one
+    /// transcript can hold several blocks for the same card, and each of them
+    /// re-asks on every reply-card revision.
     @discardableResult
     func loadCardDetail(_ id: String) async -> ReplyCard? {
         if let cached = cardDetails[id], cached.isDetailed { return cached }
         guard !session.isDemo else { return cardDetails[id] }
-        do {
-            let card = try await session.api.replyCard(id: id)
-            cardDetails[id] = card
-            return card
-        } catch {
-            note(error)
-            return waitingCards.first { $0.id == id } ?? handledCards.first { $0.id == id }
+        if let inFlight = detailFetches[id] { return await inFlight.value }
+
+        let fetch = Task { () -> ReplyCard? in
+            do {
+                let card = try await session.api.replyCard(id: id)
+                cardDetails[id] = card
+                return card
+            } catch {
+                note(error)
+                return waitingCards.first { $0.id == id }
+                    ?? handledCards.first { $0.id == id }
+            }
         }
+        detailFetches[id] = fetch
+        let card = await fetch.value
+        detailFetches[id] = nil
+        return card
     }
 
     func refreshTasks() async {
